@@ -1,0 +1,129 @@
+
+import React from 'react';
+import { createPortal } from 'react-dom';
+import { Loader2, X } from 'lucide-react';
+
+// 1. Button
+export const Button: React.FC<{
+  variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger';
+  size?: 'sm' | 'md' | 'lg';
+  loading?: boolean;
+  disabled?: boolean;
+  onClick?: () => void;
+  children: React.ReactNode;
+  className?: string;
+}> = ({ variant = 'primary', size = 'md', loading, disabled, onClick, children, className = '' }) => {
+  const base = "inline-flex items-center justify-center font-bold transition-all rounded-xl disabled:opacity-50 disabled:cursor-not-allowed";
+  const variants = {
+    primary: "navy-bg text-white shadow-lg shadow-slate-900/10 hover:shadow-xl",
+    secondary: "bg-emerald-600 text-white hover:bg-emerald-700",
+    outline: "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50",
+    ghost: "text-slate-500 hover:bg-slate-100 hover:text-slate-900",
+    danger: "bg-red-500 text-white hover:bg-red-600",
+  };
+  const sizes = {
+    sm: "px-3 py-1.5 text-xs",
+    md: "px-5 py-2.5 text-sm",
+    lg: "px-8 py-4 text-base",
+  };
+
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled || loading}
+      className={`${base} ${variants[variant]} ${sizes[size]} ${className}`}
+    >
+      {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+      {children}
+    </button>
+  );
+};
+
+// 2. Card
+export const Card: React.FC<{
+  children: React.ReactNode;
+  className?: string;
+  interactive?: boolean;
+  onClick?: () => void;
+}> = ({ children, className = '', interactive, onClick }) => (
+  <div 
+    onClick={onClick}
+    className={`bg-white rounded-3xl border border-slate-200 shadow-sm p-6 ${interactive ? 'hover:shadow-md hover:border-emerald-200 transition-all cursor-pointer' : ''} ${className}`}
+  >
+    {children}
+  </div>
+);
+
+// 3. Badge
+export const Badge: React.FC<{
+  variant?: 'success' | 'warning' | 'error' | 'info' | 'neutral';
+  children: React.ReactNode;
+  className?: string;
+}> = ({ variant = 'neutral', children, className = '' }) => {
+  const variants = {
+    success: "bg-emerald-100 text-emerald-700",
+    warning: "bg-amber-100 text-amber-700",
+    error: "bg-red-100 text-red-700",
+    info: "bg-blue-100 text-blue-700",
+    neutral: "bg-slate-100 text-slate-600",
+  };
+  return (
+    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${variants[variant]} ${className}`}>
+      {children}
+    </span>
+  );
+};
+
+// 4. Modal
+export const Modal: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  title: string;
+  children: React.ReactNode;
+  footer?: React.ReactNode;
+}> = ({ isOpen, onClose, title, children, footer }) => {
+  if (!isOpen) return null;
+  const content = (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose}></div>
+      <div className="relative w-full max-w-lg bg-white rounded-[2rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+        <div className="flex items-center justify-between p-6 border-b border-slate-100">
+          <h3 className="text-xl font-bold text-slate-900">{title}</h3>
+          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-900 rounded-full transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="p-6">
+          {children}
+        </div>
+        {footer && (
+          <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
+            {footer}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+  if (typeof document === 'undefined') return content;
+  return createPortal(content, document.body);
+};
+
+// 5. ProgressBar
+export const ProgressBar: React.FC<{
+  value: number;
+  max?: number;
+  label?: string;
+  colorClass?: string;
+}> = ({ value, max = 100, label, colorClass = "bg-emerald-500" }) => (
+  <div className="space-y-2">
+    {label && (
+      <div className="flex justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
+        <span>{label}</span>
+        <span>{Math.round((value / max) * 100)}%</span>
+      </div>
+    )}
+    <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+      <div className={`h-full transition-all duration-1000 ${colorClass}`} style={{ width: `${(value / max) * 100}%` }}></div>
+    </div>
+  </div>
+);
