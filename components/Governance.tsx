@@ -1,85 +1,146 @@
 import React from "react";
-import { Vote, Users, Clock, TrendingUp } from "lucide-react";
+import { motion } from "framer-motion";
 
-const GovernanceFeature = ({
-  icon: Icon,
-  title,
-  description,
-}: {
-  icon: any;
-  title: string;
-  description: string;
-}) => (
-  <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
-    <div className="w-12 h-12 sage-bg rounded-2xl flex items-center justify-center mb-6 shadow-lg shadow-emerald-200">
-      <Icon className="text-white w-6 h-6" />
+const chipTextClass =
+  "text-base sm:text-lg font-semibold tracking-tight leading-none text-slate-900 [font-family:Georgia,'Times_New_Roman',serif]";
+const chipClass =
+  "inline-flex items-center px-4 py-2.5 rounded-xl bg-white/90 shadow-[0_8px_24px_rgba(15,23,42,0.06)]";
+const branchChipClass =
+  "inline-flex items-center px-2.5 py-1.5 rounded-lg bg-white/95 border border-slate-200 shadow-[0_4px_12px_rgba(15,23,42,0.05)]";
+
+const BranchTree = ({ labels }: { labels: readonly string[] }) => (
+  <motion.div
+    className="mt-4 ml-3"
+    initial={{ opacity: 0, y: 6 }}
+    whileInView={{ opacity: 1, y: 0 }}
+    viewport={{ once: true, amount: 0.6 }}
+    transition={{ duration: 0.35, delay: 0.12 }}
+  >
+    <div className="relative pl-7">
+      <motion.div
+        className="absolute left-0 top-0 w-[2px] h-4 bg-slate-700 rounded-full"
+        initial={{ scaleY: 0 }}
+        whileInView={{ scaleY: 1 }}
+        viewport={{ once: true, amount: 0.7 }}
+        transition={{ duration: 0.25 }}
+        style={{ transformOrigin: "top" }}
+      />
+      <motion.div
+        className="absolute left-0 top-4 bottom-2 w-[2px] bg-slate-700 rounded-full"
+        initial={{ scaleY: 0 }}
+        whileInView={{ scaleY: 1 }}
+        viewport={{ once: true, amount: 0.7 }}
+        transition={{ duration: 0.35, delay: 0.05 }}
+        style={{ transformOrigin: "top" }}
+      />
+      <div className="space-y-2.5 sm:space-y-3">
+        {labels.map((label, index) => (
+          <motion.div
+            key={label}
+            className="relative flex items-center min-h-7"
+            initial={{ opacity: 0, x: -6 }}
+            whileInView={{ opacity: 1, x: 0 }}
+            viewport={{ once: true, amount: 0.7 }}
+            transition={{ duration: 0.22, delay: 0.14 + index * 0.07 }}
+          >
+            <motion.div
+              className="absolute -left-7 top-1/2 -translate-y-1/2 w-7 h-[2px] bg-slate-700 rounded-full"
+              initial={{ scaleX: 0 }}
+              whileInView={{ scaleX: 1 }}
+              viewport={{ once: true, amount: 0.7 }}
+              transition={{ duration: 0.2, delay: 0.1 + index * 0.06 }}
+              style={{ transformOrigin: "left" }}
+            />
+            <span className={`${branchChipClass} relative -ml-[1px] text-xs sm:text-sm font-medium tracking-tight text-slate-700`}>
+              {label}
+            </span>
+          </motion.div>
+        ))}
+      </div>
     </div>
-    <h3 className="text-xl font-bold text-slate-900 mb-3">{title}</h3>
-    <p className="text-slate-600 leading-relaxed">{description}</p>
-  </div>
+  </motion.div>
 );
+
+const StepCard = ({
+  children,
+  className,
+  delay = 0,
+}: {
+  children: React.ReactNode;
+  className: string;
+  delay?: number;
+}) => (
+  <motion.div
+    className={className}
+    initial={{ opacity: 0, y: 16 }}
+    whileInView={{ opacity: 1, y: 0 }}
+    viewport={{ once: true, amount: 0.42 }}
+    transition={{ duration: 0.45, ease: "easeOut", delay }}
+  >
+    {children}
+  </motion.div>
+);
+
+const staircase = [
+  { title: "more support = more weight", offsetClass: "lg:ml-[0%]" },
+  {
+    title: "admins create",
+    offsetClass: "lg:ml-[24%]",
+    branches: ["projects", "deadlines", "documents", "targets"],
+  },
+  {
+    title: "members vote support",
+    offsetClass: "lg:ml-[49%]",
+    branches: ["upvotes", "USDC stake", "activity logs", "status updates"],
+  },
+  { title: "everyone shares returns", offsetClass: "lg:ml-[72%]" },
+] as const;
 
 const Governance: React.FC = () => {
   return (
-    <section id="governance" className="py-24 bg-white">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-16">
+    <section id="governance" className="py-28 lg:py-32 bg-gradient-to-b from-white to-slate-50/30">
+      <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="hidden lg:block absolute top-6 right-1 w-72 h-72 rounded-3xl overflow-hidden shadow-xl shadow-slate-900/15 rotate-[7deg]">
+          <img
+            src="https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=800&q=80"
+            alt="Community members collaborating in discussion"
+            className="w-full h-full object-cover"
+            loading="lazy"
+          />
+        </div>
+        <div className="hidden lg:block absolute bottom-6 left-0 w-[17rem] h-[17rem] rounded-3xl overflow-hidden shadow-xl shadow-slate-900/15 -rotate-[8deg]">
+          <img
+            src="https://images.unsplash.com/photo-1521737711867-e3b97375f902?auto=format&fit=crop&w=800&q=80"
+            alt="Community planning and governance meeting"
+            className="w-full h-full object-cover"
+            loading="lazy"
+          />
+        </div>
+
+        <div className="text-center mb-20">
           <h2 className="text-3xl font-extrabold text-slate-900 sm:text-4xl mb-4">
             Community Governance
           </h2>
-          <p className="text-lg text-slate-600 max-w-2xl mx-auto">
-            Clear roles and transparent voting help communities decide what to fund and how to manage returns.
+          <p className="text-slate-500 text-base sm:text-lg">
+            A visual flow from support to outcomes.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-          <GovernanceFeature
-            icon={Vote}
-            title="USDC Voting Power"
-            description="Support votes are backed by staked USDC. More support means stronger voting weight."
-          />
-          <GovernanceFeature
-            icon={Users}
-            title="Proposal System"
-            description="Admins create project proposals with funding targets, deadlines, and supporting documents."
-          />
-          <GovernanceFeature
-            icon={Clock}
-            title="Transparent Timelines"
-            description="Each project has clear dates, status changes, and activity logs that everyone can review."
-          />
-          <GovernanceFeature
-            icon={TrendingUp}
-            title="Collective Returns"
-            description="Project returns are distributed to supporters based on their share of staked support."
-          />
-        </div>
-
-        <div className="mt-16 bg-slate-50 rounded-3xl p-8 md:p-12 border border-slate-200">
-          <div className="max-w-3xl mx-auto text-center">
-            <h3 className="text-2xl font-bold text-slate-900 mb-4">
-              How Decisions Are Made
-            </h3>
-            <p className="text-slate-600 leading-relaxed mb-6">
-              Founder and admin roles manage setup, member access, and proposal listing.
-              Members then vote by staking USDC support, while finance leads deposit project
-              returns for distribution. Every step is recorded and visible to the community.
-            </p>
-            <div className="flex flex-wrap justify-center gap-4 text-sm text-slate-500">
-              <span className="flex items-center gap-2">
-                <span className="w-2 h-2 bg-emerald-500 rounded-full"></span>
-                Role-based permissions
-              </span>
-              <span className="flex items-center gap-2">
-                <span className="w-2 h-2 bg-emerald-500 rounded-full"></span>
-                Full activity timeline
-              </span>
-              <span className="flex items-center gap-2">
-                <span className="w-2 h-2 bg-emerald-500 rounded-full"></span>
-                Transparent return sharing
-              </span>
-            </div>
-          </div>
+        <div className="relative w-full mx-auto space-y-12 sm:space-y-14 lg:space-y-16">
+          {staircase.map((step, index) => (
+            <StepCard
+              key={step.title}
+              className={`flex justify-start ${step.offsetClass}`}
+              delay={index * 0.04}
+            >
+              <div className="relative">
+                <div className={chipClass}>
+                  <span className={chipTextClass}>{step.title}</span>
+                </div>
+                {"branches" in step ? <BranchTree labels={step.branches} /> : null}
+              </div>
+            </StepCard>
+          ))}
         </div>
       </div>
     </section>

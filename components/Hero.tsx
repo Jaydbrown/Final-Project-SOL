@@ -1,7 +1,11 @@
 import React from "react";
 import { ArrowRight, PlayCircle } from "lucide-react";
 
-const Hero: React.FC<{ onLaunch: () => void }> = ({ onLaunch }) => {
+const Hero: React.FC<{ onLaunch: () => void; isAuthenticated?: boolean }> = ({
+  onLaunch,
+  isAuthenticated = false,
+}) => {
+  const launchLabel = isAuthenticated ? "Open Dashboard" : "Launch App";
   return (
     <section className="relative pt-16 pb-20 lg:pt-24 lg:pb-32 overflow-hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col lg:flex-row items-center gap-12">
@@ -26,7 +30,7 @@ const Hero: React.FC<{ onLaunch: () => void }> = ({ onLaunch }) => {
               onClick={onLaunch}
               className="navy-bg text-white px-8 py-4 rounded-xl font-bold flex items-center justify-center gap-2 hover:translate-y-[-2px] transition-transform shadow-lg shadow-slate-900/20 active:translate-y-[0]"
             >
-              Launch App
+              {launchLabel}
               <ArrowRight className="w-5 h-5" />
             </button>
             <a
@@ -44,11 +48,11 @@ const Hero: React.FC<{ onLaunch: () => void }> = ({ onLaunch }) => {
         <div className="flex-1 relative w-full max-w-[600px] aspect-[4/3] lg:aspect-square">
           <div className="absolute inset-0 rounded-[2.5rem] overflow-hidden shadow-2xl rotate-2">
             <img
-              src="https://upload.wikimedia.org/wikipedia/commons/f/f3/Memphis_Tennessee-2014.jpg"
-              alt="Local Neighborhood"
-              className="w-full h-full object-cover filter blur-[2px] opacity-80"
+              src="https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?auto=format&fit=crop&w=1400&q=80&v=3"
+              alt="Families and children in an underserved local community"
+              className="w-full h-full object-cover"
             />
-            <div className="absolute inset-0 bg-gradient-to-tr from-slate-900/40 to-transparent"></div>
+            <div className="absolute inset-0 bg-gradient-to-tr from-slate-900/35 via-slate-900/10 to-transparent"></div>
           </div>
           <div className="absolute inset-0 z-10 flex items-center justify-center opacity-40 pointer-events-none">
             <svg viewBox="0 0 400 400" className="w-full h-full text-white/40">
