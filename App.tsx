@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import { Shield } from 'lucide-react';
 import LandingPage from './views/LandingPage';
 import AppShell from './layouts/AppShell';
 import Dashboard from './views/Dashboard';
@@ -21,16 +22,24 @@ export type ViewState = 'landing' | 'dashboard' | 'my-daos' | 'discover' | 'inve
 const App: React.FC = () => {
   const [view, setView] = useState<ViewState>('landing');
   const [selectedProposalId, setSelectedProposalId] = useState<string | null>(null);
+  const [hasShownSplashLongEnough, setHasShownSplashLongEnough] = useState(false);
 
   const { ready, authenticated, login, logout, user } = usePrivy();
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setHasShownSplashLongEnough(true);
+    }, 2200);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, []);
 
   // Reset membership check on logout, and set initial view on login
   useEffect(() => {
     if (!authenticated) {
       setView('landing');
-    } else if (view === 'landing') {
-      // Only redirect to dashboard if we're on landing page
-      setView('dashboard');
     }
   }, [authenticated]);
 
@@ -85,35 +94,16 @@ const App: React.FC = () => {
   };
   
 
-  if (!ready) {
+  if (!ready || !hasShownSplashLongEnough) {
     return (
       <>
         <div className="loader-overlay w-full min-h-screen flex items-center justify-center">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            xmlnsXlink="http://www.w3.org/1999/xlink"
-            width="72px"
-            height="72px"
-            viewBox="0 0 59 59"
-            className="overflow-visible"
-          >
-            <g>
-              <path
-                className="animate-bounce"
-                stroke="none"
-                fillRule="nonzero"
-                fill="#E1E4FF"
-                d="M 28.746094 0.015625 C 28.359375 0.03125 27.722656 0.0703125 27.363281 0.105469 C 22.929688 0.515625 18.730469 2.207031 15.242188 4.992188 C 10.347656 8.894531 7.28125 14.597656 6.730469 20.804688 C 6.667969 21.515625 6.648438 21.972656 6.648438 22.863281 C 6.648438 23.753906 6.667969 24.207031 6.730469 24.929688 C 7.152344 29.683594 9.066406 34.183594 12.210938 37.816406 C 13.949219 39.832031 16.046875 41.53125 18.394531 42.84375 C 18.953125 43.15625 19.9375 43.636719 20.53125 43.890625 C 22.722656 44.820312 25.042969 45.40625 27.398438 45.617188 C 28.769531 45.746094 30.207031 45.746094 31.578125 45.617188 C 35.304688 45.28125 38.875 44.035156 42.035156 41.964844 C 43.890625 40.75 45.613281 39.210938 47.058594 37.476562 C 49.902344 34.066406 51.683594 29.910156 52.1875 25.5 C 52.386719 23.769531 52.386719 21.882812 52.179688 20.144531 C 51.65625 15.714844 49.839844 11.539062 46.96875 8.132812 C 46.183594 7.207031 45.144531 6.164062 44.21875 5.382812 C 42.054688 3.558594 39.523438 2.128906 36.859375 1.222656 C 34.933594 0.570312 33.109375 0.207031 31.019531 0.0585938 C 30.558594 0.0234375 29.148438 -0.00390625 28.746094 0.015625 Z M 28.746094 0.015625 "
-              />
-              <path
-                className="animate-blobby-pulse"
-                stroke="none"
-                fillRule="nonzero"
-                fill="#E1E4FF"
-                d="M 27.191406 52.46875 C 20.148438 52.691406 14.652344 53.902344 13.953125 55.386719 C 13.894531 55.519531 13.882812 55.566406 13.882812 55.722656 C 13.882812 55.886719 13.890625 55.921875 13.960938 56.0625 C 14.652344 57.472656 19.667969 58.636719 26.300781 58.929688 C 32.234375 59.195312 38.464844 58.695312 42.054688 57.664062 C 43.746094 57.175781 44.730469 56.644531 45.023438 56.050781 C 45.085938 55.925781 45.09375 55.882812 45.09375 55.722656 C 45.09375 55.457031 45.011719 55.285156 44.757812 55.035156 C 44.535156 54.8125 44.269531 54.636719 43.878906 54.441406 C 41.730469 53.378906 37.152344 52.636719 31.660156 52.464844 C 30.820312 52.441406 28.054688 52.441406 27.191406 52.46875 Z M 27.191406 52.46875 "
-              />
-            </g>
-          </svg>
+          <div className="flex flex-col items-center gap-3">
+            <div className="animate-bounce navy-bg p-3 rounded-2xl shadow-lg shadow-emerald-600/20">
+              <Shield className="text-white w-10 h-10" />
+            </div>
+            <p className="text-sm font-semibold text-slate-600 tracking-wide">LocalDAO</p>
+          </div>
         </div>
         <ToastContainer position="top-right" newestOnTop theme="colored" />
       </>
@@ -123,7 +113,14 @@ const App: React.FC = () => {
   if (!authenticated) {
     return (
       <>
-        <LandingPage onViewChange={() => setView('dashboard')} onLogin={login} />
+        <LandingPage
+          onViewChange={() => setView('dashboard')}
+          onLogin={() => {
+            login();
+            setView('dashboard');
+          }}
+          isAuthenticated={false}
+        />
         <ToastContainer position="top-right" newestOnTop theme="colored" />
       </>
     );
@@ -131,6 +128,14 @@ const App: React.FC = () => {
 
 
   if (authenticated) {
+  if (view === 'landing') {
+    return (
+      <>
+        <LandingPage onViewChange={setView} onLogin={() => setView('dashboard')} isAuthenticated />
+        <ToastContainer position="top-right" newestOnTop theme="colored" />
+      </>
+    );
+  }
   return (
     <>
       <AppShell currentView={view} onViewChange={setView} user={user} onLogout={logout}>

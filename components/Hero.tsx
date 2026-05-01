@@ -1,7 +1,11 @@
 import React from "react";
 import { ArrowRight, PlayCircle } from "lucide-react";
 
-const Hero: React.FC<{ onLaunch: () => void }> = ({ onLaunch }) => {
+const Hero: React.FC<{ onLaunch: () => void; isAuthenticated?: boolean }> = ({
+  onLaunch,
+  isAuthenticated = false,
+}) => {
+  const launchLabel = isAuthenticated ? "Open Dashboard" : "Launch App";
   return (
     <section className="relative pt-16 pb-20 lg:pt-24 lg:pb-32 overflow-hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col lg:flex-row items-center gap-12">
@@ -26,7 +30,7 @@ const Hero: React.FC<{ onLaunch: () => void }> = ({ onLaunch }) => {
               onClick={onLaunch}
               className="navy-bg text-white px-8 py-4 rounded-xl font-bold flex items-center justify-center gap-2 hover:translate-y-[-2px] transition-transform shadow-lg shadow-slate-900/20 active:translate-y-[0]"
             >
-              Launch App
+              {launchLabel}
               <ArrowRight className="w-5 h-5" />
             </button>
             <a

@@ -3,20 +3,21 @@ import React from 'react';
 import { ShieldCheck, Users, TrendingUp } from 'lucide-react';
 
 const FeatureCard = ({ icon: Icon, title, description }: { icon: any, title: string, description: string }) => (
-  <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
-    <div className="w-12 h-12 sage-bg rounded-2xl flex items-center justify-center mb-6 shadow-lg shadow-emerald-200">
+  <article className="relative overflow-hidden bg-white p-8 rounded-3xl border border-slate-200 shadow-[0_10px_30px_rgba(15,23,42,0.06)] hover:shadow-[0_14px_34px_rgba(15,23,42,0.1)] transition-all">
+    <div className="absolute -right-8 -top-8 w-24 h-24 rounded-full bg-emerald-50/70" />
+    <div className="w-12 h-12 sage-bg rounded-2xl flex items-center justify-center mb-6 shadow-lg shadow-emerald-200 relative z-10">
       <Icon className="text-white w-6 h-6" />
     </div>
-    <h3 className="text-xl font-bold text-slate-900 mb-3">{title}</h3>
-    <p className="text-slate-600 leading-relaxed">{description}</p>
-  </div>
+    <h3 className="text-xl font-bold text-slate-900 mb-3 relative z-10">{title}</h3>
+    <p className="text-slate-600 leading-relaxed relative z-10">{description}</p>
+  </article>
 );
 
 const Features: React.FC = () => {
   return (
-    <section className="py-24 bg-white">
+    <section className="py-24 lg:py-28 bg-white">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-16">
+        <div className="text-center mb-16 lg:mb-18">
           <h2 className="text-3xl font-extrabold text-slate-900 sm:text-4xl mb-4">
             Built for Real Communities
           </h2>

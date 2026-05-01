@@ -1,6 +1,6 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Compass, MessageSquare, User, Bell, LayoutDashboard, Menu, X, Shield, Globe, CheckCircle, Wallet, House, LogOut, UserPlus, Coins } from 'lucide-react';
+import { Compass, MessageSquare, User, Bell, LayoutDashboard, Menu, X, Shield, Globe, CheckCircle, Wallet, House, LogOut, UserPlus, Coins, ArrowLeft } from 'lucide-react';
 import type { ViewState } from '../App';
 import { useWallets, type User as PrivyUser } from '@privy-io/react-auth';
 import { getChainName } from '../utils/chainUtils';
@@ -255,8 +255,15 @@ const AppShell: React.FC<AppShellProps> = ({ children, currentView, onViewChange
       {/* Main Content Area */}
       <div className="flex-grow flex flex-col min-w-0">
         <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 lg:px-8 sticky top-0 z-40">
-          <div className="flex items-center gap-4 lg:hidden">
-            <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-600">
+          <div className="flex items-center gap-2 lg:gap-4">
+            <button
+              onClick={() => onViewChange('landing')}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors text-xs sm:text-sm font-semibold"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Home
+            </button>
+            <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-600 lg:hidden">
               <Menu className="w-6 h-6" />
             </button>
           </div>
