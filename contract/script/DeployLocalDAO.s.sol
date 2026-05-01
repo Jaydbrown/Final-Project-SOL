@@ -7,7 +7,7 @@ import {LocalDAOFactory} from "../src/LocalDAOFactory.sol";
 
 contract DeployLocalDAO is Script {
     // TODO: replace with real stablecoin on Fuji or a mock you deploy first
-    address constant STABLE_TOKEN = 0x5425890298aed601595a70AB815c96711a31Bc65;
+    address constant STABLE_TOKEN = 0x9DeF976D0B9478d19B097753ad390af3D4E7DEeB;
 
     function run() external {
         uint256 pk = vm.envUint("PRIVATE_KEY");
