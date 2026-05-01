@@ -48,11 +48,11 @@ const Hero: React.FC<{ onLaunch: () => void; isAuthenticated?: boolean }> = ({
         <div className="flex-1 relative w-full max-w-[600px] aspect-[4/3] lg:aspect-square">
           <div className="absolute inset-0 rounded-[2.5rem] overflow-hidden shadow-2xl rotate-2">
             <img
-              src="https://upload.wikimedia.org/wikipedia/commons/f/f3/Memphis_Tennessee-2014.jpg"
-              alt="Local Neighborhood"
-              className="w-full h-full object-cover filter blur-[2px] opacity-80"
+              src="https://images.unsplash.com/photo-1506784365847-bbad939e9335?auto=format&fit=crop&w=1400&q=80"
+              alt="Black community members gathering and celebrating in a neighborhood"
+              className="w-full h-full object-cover"
             />
-            <div className="absolute inset-0 bg-gradient-to-tr from-slate-900/40 to-transparent"></div>
+            <div className="absolute inset-0 bg-gradient-to-tr from-slate-900/35 via-slate-900/10 to-transparent"></div>
           </div>
           <div className="absolute inset-0 z-10 flex items-center justify-center opacity-40 pointer-events-none">
             <svg viewBox="0 0 400 400" className="w-full h-full text-white/40">
