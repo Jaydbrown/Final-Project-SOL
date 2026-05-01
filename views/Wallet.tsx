@@ -1,21 +1,33 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Card } from '../components/UI';
+import { Card, RoleTags } from '../components/UI';
 import { Globe, Shield, Wallet } from 'lucide-react';
-import type { User } from '@privy-io/react-auth';
-import { fetchActiveDaos, fetchYieldRows, formatUsdcAmount, type OnchainDao, type YieldRow } from '../utils/localDaoContracts';
+import { useWallets, type User } from '@privy-io/react-auth';
+import { fetchActiveDaos, fetchWalletDaoRoles, fetchYieldRows, formatUsdcAmount, type OnchainDao, type WalletDaoRoleRow, type YieldRow } from '../utils/localDaoContracts';
 import { getChainName } from '../utils/chainUtils';
 import { formatTxError, notifyError } from '../utils/toast';
+import { APP_CHAIN_NAME } from '../utils/contract';
 
 interface WalletViewProps {
   user: User | null;
 }
 
 const WalletView: React.FC<WalletViewProps> = ({ user }) => {
+  const { wallets } = useWallets();
+  const connectedEthWallet = wallets.find((wallet) => wallet.type === 'ethereum') as { address?: string; chainId?: string } | undefined;
   const ethWallet = user?.linkedAccounts?.find(
     (account) => account.type === 'wallet' && 'chainType' in account && account.chainType === 'ethereum'
   ) as { chainId?: string; address?: string } | undefined;
+  const effectiveAddress = (connectedEthWallet?.address || ethWallet?.address) as `0x${string}` | undefined;
+  const connectedChainName = connectedEthWallet?.chainId ? getChainName(connectedEthWallet.chainId) : 'Not Connected';
+  const effectiveChainName =
+    connectedEthWallet?.address && connectedChainName === 'Not Connected'
+      ? APP_CHAIN_NAME
+      : connectedChainName !== 'Not Connected'
+        ? connectedChainName
+        : getChainName(ethWallet?.chainId);
 
   const [daos, setDaos] = useState<OnchainDao[]>([]);
+  const [roleRows, setRoleRows] = useState<WalletDaoRoleRow[]>([]);
   const [yields, setYields] = useState<YieldRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -26,12 +38,14 @@ const WalletView: React.FC<WalletViewProps> = ({ user }) => {
     const load = async () => {
       setLoading(true);
       try {
-        const [daoRows, yieldRows] = await Promise.all([
+        const [daoRows, yieldRows, walletRoles] = await Promise.all([
           fetchActiveDaos(),
-          fetchYieldRows(ethWallet?.address as `0x${string}` | undefined),
+          fetchYieldRows(effectiveAddress),
+          fetchWalletDaoRoles(effectiveAddress),
         ]);
         setDaos(daoRows);
         setYields(yieldRows);
+        setRoleRows(walletRoles);
         setError('');
       } catch (err) {
         const message = formatTxError(err, 'Failed to load wallet data.');
@@ -42,7 +56,7 @@ const WalletView: React.FC<WalletViewProps> = ({ user }) => {
       }
     };
     void load();
-  }, [ethWallet?.address]);
+  }, [effectiveAddress]);
 
   const totals = useMemo(() => {
     const totalTvl = daos.reduce((sum, dao) => sum + dao.tvlRaw, 0n);
@@ -62,7 +76,7 @@ const WalletView: React.FC<WalletViewProps> = ({ user }) => {
         <h1 className="text-3xl font-bold text-slate-900">My Wallet</h1>
         <p className="text-slate-500 mt-2 flex items-center gap-2">
           <Globe className="w-4 h-4 text-emerald-500" />
-          {getChainName(ethWallet?.chainId)}
+          {effectiveChainName}
         </p>
       </div>
 
@@ -83,7 +97,7 @@ const WalletView: React.FC<WalletViewProps> = ({ user }) => {
                 </div>
                 <div>
                   <p className="text-emerald-400 text-[10px] font-bold uppercase mb-1">Connected Wallet</p>
-                  <p className="text-sm font-mono">{ethWallet?.address ? `${ethWallet.address.slice(0, 6)}...${ethWallet.address.slice(-4)}` : 'No wallet connected'}</p>
+                  <p className="text-sm font-mono">{effectiveAddress ? `${effectiveAddress.slice(0, 6)}...${effectiveAddress.slice(-4)}` : 'No wallet connected'}</p>
                 </div>
               </div>
             </Card>
@@ -126,6 +140,31 @@ const WalletView: React.FC<WalletViewProps> = ({ user }) => {
                 </>
               )}
             </Card>
+
+            <Card className="p-6 space-y-4">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="font-bold text-slate-900">Governance Role Snapshot</h3>
+                <p className="text-xs text-slate-500">{roleRows.length} DAOs</p>
+              </div>
+              {roleRows.length === 0 ? (
+                <p className="text-sm text-slate-500">No DAO roles found for this wallet.</p>
+              ) : (
+                <div className="space-y-3">
+                  {roleRows.map((row) => (
+                    <div key={row.daoAddress} className="p-4 border border-slate-200 rounded-xl">
+                      <p className="font-bold text-slate-900">{row.daoName}</p>
+                      <p className="text-xs text-slate-500 mb-2">{row.location}</p>
+                      <RoleTags
+                        isCreator={row.isCreator}
+                        isAdmin={row.isAdmin}
+                        isFinanceManager={row.isFinanceManager}
+                        isVerifiedMember={row.isVerifiedMember}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
           </div>
 
           <div className="space-y-6">
@@ -145,7 +184,7 @@ const WalletView: React.FC<WalletViewProps> = ({ user }) => {
                 <p className="text-xs font-bold">On-chain Security</p>
               </div>
               <p className="text-slate-400 text-xs leading-relaxed">
-                Funds are controlled by audited contract rules and role-based permissions on Avalanche Fuji.
+                Funds are controlled by role-based on-chain permissions on Lisk Sepolia.
               </p>
             </Card>
           </div>

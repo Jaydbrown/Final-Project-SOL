@@ -75,6 +75,13 @@ export const FACTORY_ABI = [
   },
   {
     type: "function",
+    name: "getAllDAOs",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "address[]" }],
+  },
+  {
+    type: "function",
     name: "daoInfo",
     stateMutability: "view",
     inputs: [{ name: "daoAddress", type: "address" }],

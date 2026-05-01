@@ -23,6 +23,7 @@ import { maskAddress } from '../utils/address';
 import { buildDaoImageDataUri } from '../utils/daoImage';
 import { formatTxError, notifyError, notifySuccess, notifyWarning } from '../utils/toast';
 import { getAddressExplorerUrl, getTxExplorerUrl, hasBackupExplorer } from '../utils/explorer';
+import { DeadlineChip, FundingProgress, StatusChip } from '../components/UI';
 
 type DiscoverDao = {
   address: string;
@@ -160,7 +161,7 @@ const Discover: React.FC = () => {
       type: "Open",
       verified: dao.isActive,
       isNew: nowSeconds - Number(dao.createdAt) < 60 * 60 * 24 * 7,
-      tags: ["On-chain", "Avalanche Fuji"],
+      tags: ["On-chain", "Lisk Sepolia"],
       img: buildDaoImageDataUri(dao.name, dao.address),
     }));
   }, [onchainDaos]);
@@ -364,7 +365,7 @@ const Discover: React.FC = () => {
 
       {/* Results Grid */}
       {loading ? (
-        <div className="py-20 text-center text-slate-500">Loading active DAOs from Avalanche Fuji...</div>
+        <div className="py-20 text-center text-slate-500">Loading active DAOs from Lisk Sepolia...</div>
       ) : error ? (
         <div className="py-20 text-center">
           <h3 className="text-xl font-bold text-slate-900">Could not load DAOs</h3>
@@ -468,6 +469,15 @@ const Discover: React.FC = () => {
                       ))}
                     </select>
                   </div>
+                  {selectedInvestment && (
+                    <div className="p-3 rounded-xl border border-slate-200 bg-white space-y-2">
+                      <div className="flex items-center gap-2">
+                        <StatusChip status={statusLabel(selectedInvestment.status)} />
+                        <DeadlineChip secondsLeft={Number(selectedInvestment.deadline) - Math.floor(Date.now() / 1000)} />
+                      </div>
+                      <FundingProgress raised={selectedInvestment.upvotes} target={selectedInvestment.fundNeeded} />
+                    </div>
+                  )}
 
                   <div>
                     <label className="block text-xs font-bold text-slate-500 mb-1">Participant Wallets + Upvotes</label>

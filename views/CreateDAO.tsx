@@ -5,6 +5,7 @@ import { addMemberToDao, createDaoOnFactory, updateDaoInfoOnchain, type PrivyEth
 import { maskAddress } from '../utils/address';
 import { uploadImageToIpfs } from '../utils/ipfs';
 import { getTxExplorerUrl, hasBackupExplorer } from '../utils/explorer';
+import { APP_CHAIN_ID, APP_CHAIN_NAME } from '../utils/contract';
 
 interface CreateDAOProps {
   onComplete: () => void;
@@ -40,7 +41,7 @@ const normalizeCreateDaoError = (error: unknown): string => {
     lower.includes("chain") &&
     (lower.includes("mismatch") || lower.includes("unsupported") || lower.includes("switch"))
   ) {
-    return "Wrong network selected. Switch your wallet to Avalanche Fuji and retry.";
+    return `Wrong network selected. Switch your wallet to ${APP_CHAIN_NAME} (${APP_CHAIN_ID}) and retry.`;
   }
 
   if (lower.includes("no usable ethereum wallet found") || lower.includes("no ethereum wallet found")) {
@@ -708,7 +709,7 @@ const CreateDAO: React.FC<CreateDAOProps> = ({ onComplete }) => {
             <div className="p-4 bg-slate-50 rounded-xl border border-dashed border-slate-300">
               <div className="flex justify-between items-center text-xs font-bold text-slate-500">
                 <span>Network</span>
-                <span>Avalanche Fuji (43113)</span>
+                <span>{APP_CHAIN_NAME} ({APP_CHAIN_ID})</span>
               </div>
             </div>
           </div>
@@ -721,7 +722,7 @@ const CreateDAO: React.FC<CreateDAOProps> = ({ onComplete }) => {
             </div>
             <div>
               <h2 className="text-2xl font-bold text-slate-900">DAO Created Successfully!</h2>
-              <p className="text-slate-500 mt-2">Your neighborhood investment club is now live on Avalanche Fuji.</p>
+              <p className="text-slate-500 mt-2">Your neighborhood investment club is now live on {APP_CHAIN_NAME}.</p>
             </div>
             {createdDaoAddress && (
               <div className="p-4 bg-slate-50 rounded-xl font-mono text-xs text-slate-500 border border-slate-200">

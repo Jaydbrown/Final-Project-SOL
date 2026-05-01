@@ -7,7 +7,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig(({ mode }) => {
   let env: Record<string, string> = {};
-  const rootEnvDir = path.resolve(process.cwd(), "..");
+  const rootEnvDir = process.cwd();
   try {
     env = loadEnv(mode, rootEnvDir, "");
   } catch (error) {

@@ -2,11 +2,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Compass, MessageSquare, User, Bell, LayoutDashboard, Search, Menu, X, Shield, Globe, CheckCircle, Wallet, House, LogOut, UserPlus, Coins } from 'lucide-react';
 import type { ViewState } from '../App';
-import type { User as PrivyUser } from '@privy-io/react-auth';
+import { useWallets, type User as PrivyUser } from '@privy-io/react-auth';
 import { getChainName } from '../utils/chainUtils';
 import { fetchActiveDaos, fetchAllInvestments, fetchYieldRows, formatUsdcAmount, statusLabel, type OnchainDao } from '../utils/localDaoContracts';
 import { loadDaoChatMessages, subscribeDaoChat } from '../utils/daoChat';
 import { Button, Modal } from '../components/UI';
+import { APP_CHAIN_NAME } from '../utils/contract';
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -17,6 +18,8 @@ interface AppShellProps {
 }
 
 const AppShell: React.FC<AppShellProps> = ({ children, currentView, onViewChange, user, onLogout }) => {
+  const { wallets } = useWallets();
+  const connectedEthWallet = wallets.find((wallet) => wallet.type === 'ethereum') as { address?: string; chainId?: string } | undefined;
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -86,9 +89,12 @@ const AppShell: React.FC<AppShellProps> = ({ children, currentView, onViewChange
   // Get the Ethereum wallet's chain ID from linked accounts
   const ethWallet = user?.linkedAccounts?.find(
     (account) => account.type === 'wallet' && 'chainType' in account && account.chainType === 'ethereum'
-  ) as { chainId?: string } | undefined;
-  const chainId = ethWallet?.chainId;
-  const walletAddress = (ethWallet as { address?: string } | undefined)?.address;
+  ) as { chainId?: string; address?: string } | undefined;
+  const walletAddress = (connectedEthWallet?.address || ethWallet?.address) as `0x${string}` | undefined;
+  const rawChainName = connectedEthWallet?.chainId ? getChainName(connectedEthWallet.chainId) : getChainName(ethWallet?.chainId);
+  const isWalletConnected = Boolean(walletAddress);
+  const effectiveChainName = isWalletConnected && rawChainName === 'Not Connected' ? APP_CHAIN_NAME : rawChainName;
+  const sidebarConnectionLabel = isWalletConnected ? `Connected • ${effectiveChainName}` : 'Not Connected';
 
   const refreshNotifications = async () => {
     setNotificationsLoading(true);
@@ -239,7 +245,7 @@ const AppShell: React.FC<AppShellProps> = ({ children, currentView, onViewChange
           <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-2">
               <Globe className="w-3 h-3 text-emerald-500" />
-              {getChainName(chainId)}
+              {sidebarConnectionLabel}
             </p>
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 text-xs font-bold">
@@ -250,8 +256,8 @@ const AppShell: React.FC<AppShellProps> = ({ children, currentView, onViewChange
                   {user?.email?.address || 'User'}
                 </p>
                 <p className="text-[10px] text-slate-500 font-mono">
-                  {user?.wallet?.address
-                    ? `${user.wallet.address.slice(0, 6)}...${user.wallet.address.slice(-4)}`
+                  {walletAddress
+                    ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`
                     : 'No wallet'}
                 </p>
               </div>
@@ -389,8 +395,8 @@ const AppShell: React.FC<AppShellProps> = ({ children, currentView, onViewChange
             <div className="hidden sm:flex items-center gap-3 bg-slate-100 px-4 py-2 rounded-full border border-slate-200 cursor-pointer" onClick={() => onViewChange('wallet')}>
               <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
               <span className="text-xs font-mono text-slate-600">
-                {user?.wallet?.address
-                  ? `${user.wallet.address.slice(0, 6)}...${user.wallet.address.slice(-4)}`
+                {walletAddress
+                  ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`
                   : 'No wallet'}
               </span>
             </div>

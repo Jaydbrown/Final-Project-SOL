@@ -6,13 +6,13 @@ const Hero: React.FC<{ onLaunch: () => void }> = ({ onLaunch }) => {
     <section className="relative pt-16 pb-20 lg:pt-24 lg:pb-32 overflow-hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col lg:flex-row items-center gap-12">
         <div className="flex-1 text-center lg:text-left z-10">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-100 sage-text text-xs font-bold uppercase tracking-wider mb-6">
+          {/* <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-100 sage-text text-xs font-bold uppercase tracking-wider mb-6">
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
             </span>
             Community Investment Platform
-          </div>
+          </div> */}
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-slate-900 leading-[1.1] mb-6">
             Invest in Your Neighborhood,{" "}
             <span className="sage-text">Together</span>

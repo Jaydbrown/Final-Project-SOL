@@ -87,7 +87,7 @@ const Footer: React.FC = () => {
 
         <div className="pt-8 border-t border-slate-800 flex flex-col md:flex-row justify-between items-center gap-6">
           <p className="text-slate-500 text-xs">
-            © {new Date().getFullYear()} LocalDAO. Built for Avalanche Fuji.
+            © {new Date().getFullYear()} LocalDAO.
           </p>
         </div>
       </div>

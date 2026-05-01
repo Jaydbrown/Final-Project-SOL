@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useWallets } from "@privy-io/react-auth";
-import { Card, Button, Modal } from '../components/UI';
+import { Card, Button, Modal, MetricCard, StatusChip } from '../components/UI';
 import { AlertCircle, ArrowUpRight, Coins, TrendingUp } from 'lucide-react';
 import {
   claimInvestmentYield,
@@ -79,8 +79,14 @@ const YieldsView: React.FC = () => {
   const totals = useMemo(() => {
     const totalYield = rows.reduce((sum, row) => sum + row.totalYield, 0n);
     const totalClaimable = rows.reduce((sum, row) => sum + row.claimable, 0n);
-    return { totalYield, totalClaimable };
+    const totalDistributed = rows.reduce((sum, row) => sum + row.distributed, 0n);
+    return { totalYield, totalClaimable, totalDistributed };
   }, [rows]);
+
+  const distributionRatio = useMemo(() => {
+    if (totals.totalYield <= 0n) return 0;
+    return Math.min(100, Math.max(0, Number((totals.totalDistributed * 100n) / totals.totalYield)));
+  }, [totals.totalDistributed, totals.totalYield]);
 
   const handleClaim = async (row: YieldRow) => {
     if (!wallet) {
@@ -196,27 +202,10 @@ const YieldsView: React.FC = () => {
 
       {activeTab === 'overview' ? (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-            <Card className="bg-emerald-50 border-emerald-100 p-8 space-y-4">
-              <div className="flex justify-between items-start">
-                <div className="p-3 bg-emerald-600 text-white rounded-2xl">
-                  <TrendingUp className="w-6 h-6" />
-                </div>
-              </div>
-              <div>
-                <p className="text-xs font-bold text-emerald-700 uppercase tracking-widest mb-1">Total Yield Generated</p>
-                <h3 className="text-3xl font-extrabold text-slate-900">{formatUsdcAmount(totals.totalYield)}</h3>
-              </div>
-            </Card>
-            <Card className="p-8 space-y-4">
-              <div className="p-3 bg-slate-100 text-slate-700 rounded-2xl w-fit">
-                <Coins className="w-6 h-6" />
-              </div>
-              <div>
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Your Claimable Yield</p>
-                <h3 className="text-3xl font-extrabold text-slate-900">{formatUsdcAmount(totals.totalClaimable)}</h3>
-              </div>
-            </Card>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+            <MetricCard label="Total Yield Generated" value={formatUsdcAmount(totals.totalYield)} />
+            <MetricCard label="Total Yield Distributed" value={formatUsdcAmount(totals.totalDistributed)} sublabel={`${distributionRatio}% distributed`} />
+            <MetricCard label="Your Claimable Yield" value={formatUsdcAmount(totals.totalClaimable)} />
           </div>
 
           <Card className="p-0 overflow-hidden">
@@ -233,6 +222,9 @@ const YieldsView: React.FC = () => {
                       <div>
                         <p className="font-bold text-slate-900">{row.investmentName}</p>
                         <p className="text-xs text-slate-500">{row.daoName}</p>
+                        <div className="mt-1">
+                          <StatusChip status={row.claimable > 0n ? 'Active' : 'Completed'} />
+                        </div>
                       </div>
                       <div className="text-right">
                         <p className="text-sm font-bold text-emerald-600">{formatUsdcAmount(row.claimable)} claimable</p>
@@ -294,6 +286,23 @@ const YieldsView: React.FC = () => {
                 ))
               )}
             </div>
+          </Card>
+
+          <Card className="p-6 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-slate-900">Recent Yield Activity</h3>
+              <p className="text-xs text-slate-500">Newest first</p>
+            </div>
+            {rows.length === 0 ? (
+              <p className="text-sm text-slate-500">No activity yet.</p>
+            ) : (
+              rows.slice(0, 6).map((row) => (
+                <div key={`activity-${row.daoAddress}-${row.investmentId}`} className="p-3 border border-slate-200 rounded-xl">
+                  <p className="text-sm font-bold text-slate-900">{row.investmentName}</p>
+                  <p className="text-xs text-slate-500">{row.daoName}</p>
+                </div>
+              ))
+            )}
           </Card>
         </div>
       ) : (

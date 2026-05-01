@@ -127,3 +127,77 @@ export const ProgressBar: React.FC<{
     </div>
   </div>
 );
+
+export const StatusChip: React.FC<{ status: string; className?: string }> = ({ status, className = '' }) => {
+  const normalized = status.toLowerCase();
+  const tone =
+    normalized === 'proposed'
+      ? 'warning'
+      : normalized === 'active'
+        ? 'info'
+        : normalized === 'completed'
+          ? 'success'
+          : 'neutral';
+  return (
+    <Badge variant={tone} className={className}>
+      {status}
+    </Badge>
+  );
+};
+
+export const DeadlineChip: React.FC<{ secondsLeft: number; className?: string }> = ({ secondsLeft, className = '' }) => {
+  if (secondsLeft <= 0) {
+    return (
+      <Badge variant="error" className={className}>
+        Expired
+      </Badge>
+    );
+  }
+  const daysLeft = Math.ceil(secondsLeft / 86400);
+  if (daysLeft <= 3) {
+    return (
+      <Badge variant="warning" className={className}>
+        Ending Soon: {daysLeft}d
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="info" className={className}>
+      {daysLeft}d Left
+    </Badge>
+  );
+};
+
+export const FundingProgress: React.FC<{ raised: bigint; target: bigint }> = ({ raised, target }) => {
+  const pct = target > 0n ? Number((raised * 100n) / target) : 0;
+  const safePct = Math.min(Math.max(pct, 0), 100);
+  return <ProgressBar value={safePct} max={100} label="Funding Progress" colorClass="bg-emerald-500" />;
+};
+
+export const RoleTags: React.FC<{
+  isCreator?: boolean;
+  isAdmin?: boolean;
+  isFinanceManager?: boolean;
+  isVerifiedMember?: boolean;
+  className?: string;
+}> = ({ isCreator, isAdmin, isFinanceManager, isVerifiedMember, className = '' }) => (
+  <div className={`flex flex-wrap gap-2 ${className}`}>
+    {isCreator && <Badge variant="info">Admin</Badge>}
+    {isAdmin && !isCreator && <Badge variant="info">Admin</Badge>}
+    {isFinanceManager && <Badge variant="neutral">Finance</Badge>}
+    {isVerifiedMember ? <Badge variant="success">KYC Verified</Badge> : <Badge variant="warning">KYC Pending</Badge>}
+  </div>
+);
+
+export const MetricCard: React.FC<{
+  label: string;
+  value: string;
+  sublabel?: string;
+  className?: string;
+}> = ({ label, value, sublabel, className = '' }) => (
+  <Card className={`p-6 ${className}`}>
+    <p className="text-slate-500 text-sm">{label}</p>
+    <h3 className="text-2xl font-bold text-slate-900 mt-1">{value}</h3>
+    {sublabel && <p className="text-xs text-slate-500 mt-1">{sublabel}</p>}
+  </Card>
+);

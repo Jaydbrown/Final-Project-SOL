@@ -1,7 +1,7 @@
 // src/utils/privyAuth.ts
 import { PrivyClient } from "@privy-io/react-auth";
 
-const privy = new PrivyClient({appId: process.env.VITE_PRIVY_APP_ID || ""});
+const privy = new PrivyClient({ appId: (import.meta.env.VITE_PRIVY_APP_ID as string | undefined) || "" });
 
 export const handlePrivyAuthResponse = (authResponse: any) => {
     if (!authResponse || !authResponse.user) {

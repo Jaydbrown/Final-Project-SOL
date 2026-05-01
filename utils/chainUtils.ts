@@ -23,7 +23,14 @@ const CHAIN_NAMES: Record<string, string> = {
 
 export function getChainName(chainId: string | undefined | null): string {
   if (!chainId) return 'Not Connected';
-  return CHAIN_NAMES[chainId] || `Chain ${chainId}`;
+  const normalized = chainId.startsWith('eip155:')
+    ? chainId
+    : chainId.startsWith('0x')
+      ? `eip155:${parseInt(chainId, 16)}`
+      : /^\d+$/.test(chainId)
+        ? `eip155:${chainId}`
+        : chainId;
+  return CHAIN_NAMES[normalized] || `Chain ${normalized}`;
 }
 
 export function getChainShortName(chainId: string | undefined | null): string {
