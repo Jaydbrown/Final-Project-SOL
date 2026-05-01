@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Coins, Plus, Search, ShieldCheck, Users, Wallet } from 'lucide-react';
+import { Plus, Search, ShieldCheck } from 'lucide-react';
 import { useWallets } from "@privy-io/react-auth";
 import type { ViewState } from '../App';
-import { Card } from '../components/UI';
+import { Card, DeadlineChip, FundingProgress, MetricCard, StatusChip } from '../components/UI';
 import type { User } from '@privy-io/react-auth';
 import { fetchActiveDaos, fetchAllInvestments, fetchDaoUserRole, fetchYieldRows, formatUsdcAmount, statusLabel, type DaoUserRole, type OnchainDao, type OnchainInvestment, type YieldRow } from '../utils/localDaoContracts';
 import { formatTxError, notifyError } from '../utils/toast';
@@ -78,9 +78,16 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onVote, user }) => 
   const totals = useMemo(() => {
     const totalTvl = daos.reduce((sum, dao) => sum + dao.tvlRaw, 0n);
     const totalYield = yields.reduce((sum, row) => sum + row.totalYield, 0n);
+    const totalDistributed = yields.reduce((sum, row) => sum + row.distributed, 0n);
     const proposed = investments.filter((inv) => inv.status === 0);
-    return { totalTvl, totalYield, proposed };
+    return { totalTvl, totalYield, totalDistributed, proposed };
   }, [daos, investments, yields]);
+
+  const recentActivity = useMemo(() => {
+    return [...investments]
+      .sort((a, b) => Number(b.createdAt - a.createdAt))
+      .slice(0, 6);
+  }, [investments]);
 
   const pagedDaos = useMemo(() => {
     const start = (daoPage - 1) * PAGE_SIZE;
@@ -130,22 +137,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onVote, user }) => 
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-        <Card className="p-6">
-          <Wallet className="w-5 h-5 text-blue-600 mb-3" />
-          <p className="text-slate-500 text-sm">Total TVL</p>
-          <h3 className="text-2xl font-bold">{formatUsdcAmount(totals.totalTvl)}</h3>
-        </Card>
-        <Card className="p-6">
-          <Coins className="w-5 h-5 text-emerald-600 mb-3" />
-          <p className="text-slate-500 text-sm">Total Yield Generated</p>
-          <h3 className="text-2xl font-bold">{formatUsdcAmount(totals.totalYield)}</h3>
-        </Card>
-        <Card className="p-6">
-          <Users className="w-5 h-5 text-purple-600 mb-3" />
-          <p className="text-slate-500 text-sm">Active DAOs</p>
-          <h3 className="text-2xl font-bold">{daos.length}</h3>
-        </Card>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <MetricCard label="Total TVL" value={formatUsdcAmount(totals.totalTvl)} />
+        <MetricCard label="Generated Yield" value={formatUsdcAmount(totals.totalYield)} />
+        <MetricCard label="Distributed Yield" value={formatUsdcAmount(totals.totalDistributed)} />
+        <MetricCard label="Active DAOs" value={String(daos.length)} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -206,7 +202,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onVote, user }) => 
                   <div key={`${proposal.daoAddress}-${proposal.id}`} className="p-4 border border-slate-200 rounded-xl flex flex-col sm:flex-row justify-between sm:items-center gap-3">
                     <div>
                       <p className="font-bold text-slate-900">{proposal.name}</p>
-                      <p className="text-xs text-slate-500">{proposal.daoName} • {statusLabel(proposal.status)}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-xs text-slate-500">{proposal.daoName}</span>
+                        <StatusChip status={statusLabel(proposal.status)} />
+                        <DeadlineChip secondsLeft={Number(proposal.deadline) - Math.floor(Date.now() / 1000)} />
+                      </div>
+                      <div className="mt-2">
+                        <FundingProgress raised={proposal.upvotes} target={proposal.fundNeeded} />
+                      </div>
                     </div>
                     {canVote ? (
                       <button
@@ -246,6 +249,28 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onVote, user }) => 
           )}
         </Card>
       </div>
+
+      <Card className="p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-bold text-slate-900">Recent DAO Activity</h2>
+          <p className="text-xs text-slate-500">Newest first</p>
+        </div>
+        {recentActivity.length === 0 ? (
+          <p className="text-sm text-slate-500">No recent actions yet.</p>
+        ) : (
+          <div className="space-y-3">
+            {recentActivity.map((item) => (
+              <div key={`${item.daoAddress}-${item.id}`} className="p-3 border border-slate-200 rounded-xl">
+                <p className="text-sm font-bold text-slate-900">{item.name}</p>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-xs text-slate-500">{item.daoName}</span>
+                  <StatusChip status={statusLabel(item.status)} />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
     </div>
   );
 };

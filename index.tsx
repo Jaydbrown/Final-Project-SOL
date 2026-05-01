@@ -22,6 +22,7 @@ if (!rootElement) {
 }
 
 const privyAppId = (import.meta.env.VITE_PRIVY_APP_ID ?? "").trim();
+console.log(privyAppId, "Privy ID")
 
 const root = ReactDOM.createRoot(rootElement);
 if (!privyAppId) {
@@ -29,7 +30,7 @@ if (!privyAppId) {
     <React.StrictMode>
       <div style={{ padding: 24, fontFamily: "system-ui, sans-serif" }}>
         <h1>Missing Privy App ID</h1>
-        <p>Set <code>VITE_PRIVY_APP_ID</code> in <code>frontend/.env</code>, then restart the dev server.</p>
+        <p>Set <code>VITE_PRIVY_APP_ID</code> in <code>.env</code>, then restart the dev server.</p>
       </div>
     </React.StrictMode>
   );

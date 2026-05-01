@@ -18,6 +18,7 @@ import {
 import { maskAddress } from '../utils/address';
 import { buildDaoImageDataUri } from '../utils/daoImage';
 import { formatTxError, notifyError, notifySuccess, notifyWarning } from '../utils/toast';
+import { DeadlineChip, FundingProgress, StatusChip } from '../components/UI';
 
 const InvestmentListing: React.FC<{ onVote: (id: string) => void }> = ({ onVote }) => {
   const [filter, setFilter] = useState('All');
@@ -230,8 +231,6 @@ const InvestmentListing: React.FC<{ onVote: (id: string) => void }> = ({ onVote 
           {filtered.slice(0, visibleCount).map(inv => {
             const status = statusLabel(inv.status);
             const secondsLeft = Number(inv.deadline) - Math.floor(Date.now() / 1000);
-            const percent = inv.fundNeeded > 0n ? Number((inv.upvotes * 100n) / inv.fundNeeded) : 0;
-            const safePercent = Math.min(Math.max(percent, 0), 100);
             const role = rolesByDao[inv.daoAddress.toLowerCase()];
             const canVoteThisDao = Boolean(walletAddress && role?.isVerifiedMember && status === 'Proposed');
 
@@ -247,13 +246,7 @@ const InvestmentListing: React.FC<{ onVote: (id: string) => void }> = ({ onVote 
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                   />
                   <div className="absolute top-4 right-4">
-                    <span className={`text-[10px] font-extrabold uppercase px-3 py-1 rounded-full tracking-wider shadow-sm ${
-                      status === 'Proposed' ? 'bg-amber-100 text-amber-700' :
-                      status === 'Active' ? 'bg-blue-100 text-blue-700' :
-                      status === 'Incomplete' ? 'bg-slate-100 text-slate-700' : 'bg-emerald-100 text-emerald-700'
-                    }`}>
-                      {status}
-                    </span>
+                    <StatusChip status={status} className="shadow-sm" />
                   </div>
                 </div>
                 <div className="p-6 flex-grow flex flex-col">
@@ -279,17 +272,11 @@ const InvestmentListing: React.FC<{ onVote: (id: string) => void }> = ({ onVote 
                   </div>
 
                   <div className="space-y-2 mb-6">
-                    <div className="flex justify-between text-[10px] font-bold uppercase tracking-wider">
-                      <span className="text-slate-400">Funding Progress</span>
-                      <span className="text-slate-900">{safePercent}%</span>
+                    <FundingProgress raised={inv.upvotes} target={inv.fundNeeded} />
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-3 h-3 text-slate-400" />
+                      <DeadlineChip secondsLeft={secondsLeft} />
                     </div>
-                    <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                      <div className="h-full bg-emerald-400" style={{ width: `${safePercent}%` }} />
-                    </div>
-                    <p className="text-[10px] text-slate-400 flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
-                      {secondsLeft > 0 ? `${Math.floor(secondsLeft / 86400)}d left` : 'Deadline passed'}
-                    </p>
                   </div>
 
                   <div className="mt-auto flex gap-3">

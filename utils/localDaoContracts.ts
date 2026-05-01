@@ -671,11 +671,38 @@ export async function createDaoOnFactory(
 }
 
 export async function fetchActiveDaos(): Promise<OnchainDao[]> {
-  const activeAddresses = await publicClient.readContract({
-    address: FACTORY_ADDRESS,
-    abi: FACTORY_ABI,
-    functionName: "getActiveDAOs",
-  });
+  let activeAddresses: Address[] = [];
+  try {
+    activeAddresses = await publicClient.readContract({
+      address: FACTORY_ADDRESS,
+      abi: FACTORY_ABI,
+      functionName: "getActiveDAOs",
+    });
+  } catch {
+    // Some deployed factory variants may not expose getActiveDAOs reliably.
+    // Fallback to getAllDAOs and filter against daoInfo.isActive.
+    const allAddresses = await publicClient.readContract({
+      address: FACTORY_ADDRESS,
+      abi: FACTORY_ABI,
+      functionName: "getAllDAOs",
+    });
+    const checks = await Promise.all(
+      allAddresses.map(async (daoAddress) => {
+        try {
+          const meta = await publicClient.readContract({
+            address: FACTORY_ADDRESS,
+            abi: FACTORY_ABI,
+            functionName: "daoInfo",
+            args: [daoAddress],
+          });
+          return meta[4] ? daoAddress : null;
+        } catch {
+          return null;
+        }
+      })
+    );
+    activeAddresses = checks.filter((address): address is Address => Boolean(address));
+  }
 
   const daos = await Promise.all(
     activeAddresses.map(async (daoAddress) => {
