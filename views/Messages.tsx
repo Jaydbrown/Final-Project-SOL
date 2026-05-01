@@ -19,6 +19,90 @@ type RoomSummary = {
 };
 
 const LAST_SEEN_KEY = "localdao_chat_last_seen_by_room";
+const ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
+const MASKED_ADDRESS_REGEX = /^0x[a-fA-F0-9]{4,}\.\.\.[a-fA-F0-9]{4}$/;
+const FRIENDLY_ADJECTIVES = [
+  "Calm",
+  "Bright",
+  "Brave",
+  "Swift",
+  "Golden",
+  "Noble",
+  "Wise",
+  "Keen",
+] as const;
+const FRIENDLY_NOUNS = [
+  "River",
+  "Palm",
+  "Eagle",
+  "Cedar",
+  "Sun",
+  "Wave",
+  "Stone",
+  "Harbor",
+] as const;
+
+const toReadableWords = (value: string) =>
+  value
+    .replace(/[_\-.]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+
+const readStringPath = (value: unknown, path: string[]): string => {
+  let current: unknown = value;
+  for (const key of path) {
+    if (!current || typeof current !== "object") return "";
+    current = (current as Record<string, unknown>)[key];
+  }
+  return typeof current === "string" ? current.trim() : "";
+};
+
+const generateMemberName = (walletAddress: string) => {
+  if (!ADDRESS_REGEX.test(walletAddress)) return "Community Member";
+  let hash = 0;
+  for (const char of walletAddress.toLowerCase()) {
+    hash = (hash * 31 + char.charCodeAt(0)) % 1000003;
+  }
+  const adjective = FRIENDLY_ADJECTIVES[hash % FRIENDLY_ADJECTIVES.length];
+  const noun = FRIENDLY_NOUNS[Math.floor(hash / FRIENDLY_ADJECTIVES.length) % FRIENDLY_NOUNS.length];
+  return `Member ${adjective} ${noun}`;
+};
+
+const isWalletLikeLabel = (value: string) =>
+  ADDRESS_REGEX.test(value) || MASKED_ADDRESS_REGEX.test(value);
+
+const resolveSenderLabel = (user: unknown, walletAddress: string) => {
+  const candidateNamePaths = [
+    ["name"],
+    ["displayName"],
+    ["google", "name"],
+    ["apple", "name"],
+    ["discord", "username"],
+    ["twitter", "name"],
+    ["github", "username"],
+  ];
+  for (const path of candidateNamePaths) {
+    const name = readStringPath(user, path);
+    if (name) return toReadableWords(name);
+  }
+
+  const email = readStringPath(user, ["email", "address"]);
+  if (email) {
+    const localPart = email.split("@")[0] ?? "";
+    if (localPart) return toReadableWords(localPart);
+  }
+
+  return generateMemberName(walletAddress);
+};
+
+const normalizeLabel = (label: string, senderWallet: string) => {
+  const trimmed = label.trim();
+  if (!trimmed || isWalletLikeLabel(trimmed)) {
+    return generateMemberName(senderWallet);
+  }
+  return toReadableWords(trimmed);
+};
 
 const readLastSeen = (): Record<string, number> => {
   if (typeof window === "undefined") return {};
@@ -79,10 +163,7 @@ const MessagesView: React.FC = () => {
   const walletAddress = activeWallet?.address ?? "";
 
   const senderLabel = useMemo(() => {
-    const email = user?.email?.address;
-    if (email) return email;
-    if (!walletAddress) return "Anonymous";
-    return `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`;
+    return resolveSenderLabel(user, walletAddress);
   }, [user, walletAddress]);
 
   const loadRoomSummaries = async (daoRows: OnchainDao[]) => {
@@ -185,6 +266,7 @@ const MessagesView: React.FC = () => {
     return messages.map((msg) => ({
       ...msg,
       mine: walletAddress ? msg.senderWallet.toLowerCase() === walletAddress.toLowerCase() : false,
+      displayLabel: normalizeLabel(msg.senderLabel, msg.senderWallet),
     }));
   }, [messages, walletAddress]);
 
@@ -334,7 +416,7 @@ const MessagesView: React.FC = () => {
                     <div key={msg.id} className={`flex ${msg.mine ? "justify-end" : "justify-start"}`}>
                       <div className={`max-w-[92%] sm:max-w-[75%] rounded-2xl px-3.5 py-2.5 shadow-sm ${msg.mine ? "bg-emerald-600 text-white" : "bg-white border border-slate-200 text-slate-900"}`}>
                         <div className={`text-[11px] mb-1 ${msg.mine ? "text-emerald-100" : "text-slate-500"}`}>
-                          {msg.mine ? "You" : msg.senderLabel}
+                          {msg.mine ? "You" : msg.displayLabel}
                         </div>
                         <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">{msg.content}</p>
                         <div className={`text-[10px] mt-1.5 ${msg.mine ? "text-emerald-100" : "text-slate-400"}`}>
@@ -372,7 +454,7 @@ const MessagesView: React.FC = () => {
                 </div>
                 <div className="mt-2 flex items-center justify-between">
                   <p className="text-xs text-slate-500">
-                    {walletAddress ? `Posting as ${maskAddress(walletAddress)}` : "Connect an Ethereum wallet in Privy to send messages."}
+                    {walletAddress ? `Posting as ${senderLabel}` : "Connect an Ethereum wallet in Privy to send messages."}
                   </p>
                   <p className="text-[11px] text-slate-400">{draft.length}/1000</p>
                 </div>
