@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import {Test, console} from "forge-std/Test.sol";
 import {LocalDAO} from "../src/LocalDAO.sol";
+import {LocalDAOView} from "../src/LocalDAOView.sol";
 import {LocalDAOFactory} from "../src/LocalDAOFactory.sol";
 import {ILocalDAO} from "../src/interfaces/ILocalDAO.sol";
 import {MockUSDC} from "./MockUSDC.sol";
@@ -10,6 +11,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract LocalDAOTest is Test {
     LocalDAO public dao;
+    LocalDAOView public daoView;
     LocalDAOFactory public factory;
     MockUSDC public usdc;
     
@@ -38,6 +40,9 @@ contract LocalDAOTest is Test {
 
         // Deploy USDC
         usdc = new MockUSDC();
+
+        // Deploy read-only lens (shared across all DAO instances)
+        daoView = new LocalDAOView();
 
         // Deploy LocalDAO implementation and Factory (proxy pattern)
         LocalDAO implementation = new LocalDAO();
@@ -111,7 +116,7 @@ contract LocalDAOTest is Test {
 
     function test_AddMember_OnlyAdmin() public {
         vm.prank(nonMember);
-        vm.expectRevert("Not admin");
+        vm.expectRevert(LocalDAO.Unauthorized.selector);
         dao.addMember(address(0x8), keccak256("kyc"));
     }
 
@@ -131,7 +136,7 @@ contract LocalDAOTest is Test {
 
         // Try to add one more
         vm.prank(admin);
-        vm.expectRevert("LocalDAO: Maximum membership limit reached");
+        vm.expectRevert(LocalDAO.MembershipFull.selector);
         dao.addMember(address(0x999), keccak256("kyc"));
     }
 
@@ -178,7 +183,7 @@ contract LocalDAOTest is Test {
 
     function test_CreateInvestment_OnlyAdmin() public {
         vm.prank(member1);
-        vm.expectRevert("Not admin");
+        vm.expectRevert(LocalDAO.Unauthorized.selector);
         dao.createInvestment(
             "Test",
             ILocalDAO.Category.HEALTH,
@@ -192,7 +197,7 @@ contract LocalDAOTest is Test {
 
     function test_CreateInvestment_InvalidParams() public {
         vm.prank(admin);
-        vm.expectRevert("LocalDAO: Invalid investment parameters");
+        vm.expectRevert(LocalDAO.InvalidParams.selector);
         dao.createInvestment(
             "Test",
             ILocalDAO.Category.HEALTH,
@@ -292,7 +297,7 @@ contract LocalDAOTest is Test {
         );
 
         vm.prank(nonMember);
-        vm.expectRevert("Not active member");
+        vm.expectRevert(LocalDAO.NotActiveMember.selector);
         dao.vote(investmentId, 1000 * 1e6, 1);
     }
 
@@ -370,7 +375,7 @@ contract LocalDAOTest is Test {
         vm.stopPrank();
 
         vm.prank(admin);
-        vm.expectRevert("LocalDAO: Investment does not meet activation requirements");
+        vm.expectRevert(LocalDAO.InvalidParams.selector);
         dao.activateInvestment(investmentId);
     }
 
@@ -574,8 +579,8 @@ contract LocalDAOTest is Test {
         // Execute
         dao.executeYieldDeposit(pid);
 
-        uint256 claimable1 = dao.calculateClaimableYield(investmentId, member1);
-        uint256 claimable2 = dao.calculateClaimableYield(investmentId, member2);
+        uint256 claimable1 = daoView.calculateClaimableYield(address(dao), investmentId, member1);
+        uint256 claimable2 = daoView.calculateClaimableYield(address(dao), investmentId, member2);
 
         assertEq(claimable1, 250 * 1e6); // 50% of yield
         assertEq(claimable2, 250 * 1e6); // 50% of yield
@@ -625,7 +630,7 @@ contract LocalDAOTest is Test {
             uint256 realizedRoiBps,
             uint256 expectedRoiBps,
             uint256 stakingUtilizationBps
-        ) = dao.getInvestmentAnalytics(investmentId);
+        ) = daoView.getInvestmentAnalytics(address(dao), investmentId);
 
         assertEq(principal, 10000 * 1e6);
         assertEq(totalStaked, 10000 * 1e6);
@@ -700,7 +705,7 @@ contract LocalDAOTest is Test {
             uint256 totalClaimedYield,
             uint256 totalClaimableYield,
             uint256 realizedRoiBps
-        ) = dao.getUserAnalytics(member1);
+        ) = daoView.getUserAnalytics(address(dao), member1);
 
         assertEq(totalStaked, 15000 * 1e6);
         assertEq(totalClaimedYield, 0);
@@ -717,7 +722,7 @@ contract LocalDAOTest is Test {
             totalClaimedYield,
             totalClaimableYield,
             realizedRoiBps
-        ) = dao.getUserAnalytics(member1);
+        ) = daoView.getUserAnalytics(address(dao), member1);
 
         assertEq(totalStaked, 15000 * 1e6);
         assertEq(totalClaimedYield, 750 * 1e6);
@@ -738,13 +743,13 @@ contract LocalDAOTest is Test {
             new string[](0)
         );
 
-        LocalDAO.Investment memory invBefore = dao.getInvestment(investmentId);
+        ILocalDAO.Investment memory invBefore = dao.getInvestment(investmentId);
         uint256 originalDeadline = invBefore.deadline;
 
         vm.prank(financeManager);
         dao.extendDeadline(investmentId, 15); // Extend by 15 days
 
-        LocalDAO.Investment memory invAfter = dao.getInvestment(investmentId);
+        ILocalDAO.Investment memory invAfter = dao.getInvestment(investmentId);
         assertEq(invAfter.deadline, originalDeadline + 15 days);
         assertEq(invAfter.extensionCount, 1);
     }
@@ -777,7 +782,7 @@ contract LocalDAOTest is Test {
 
     function test_AddAdmin_OnlyCreator() public {
         vm.prank(admin);
-        vm.expectRevert("Not creator");
+        vm.expectRevert(LocalDAO.NotCreator.selector);
         dao.addAdmin(address(0x8));
     }
 
@@ -920,7 +925,7 @@ contract LocalDAOTest is Test {
             new string[](0)
         );
 
-        LocalDAO.Investment[] memory pending = dao.getInvestmentsByStatus(ILocalDAO.Status.PENDING);
+        ILocalDAO.Investment[] memory pending = daoView.getInvestmentsByStatus(address(dao), ILocalDAO.Status.PENDING);
         assertEq(pending.length, 2);
     }
 
@@ -984,7 +989,7 @@ contract LocalDAOTest is Test {
         );
 
         vm.prank(admin);
-        vm.expectRevert("LocalDAO: Investment not active or ended");
+        vm.expectRevert(LocalDAO.InvalidParams.selector);
         dao.releaseNextPhase(investmentId, address(0));
     }
 
@@ -1011,7 +1016,7 @@ contract LocalDAOTest is Test {
 
         // Non-admin tries to release
         vm.prank(nonMember);
-        vm.expectRevert("Not admin");
+        vm.expectRevert(LocalDAO.Unauthorized.selector);
         dao.releaseNextPhase(investmentId, nonMember);
     }
 }
