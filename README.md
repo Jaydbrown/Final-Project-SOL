@@ -641,23 +641,6 @@ After deployment:
 3. Add your stablecoin address as `VITE_USDC_ADDRESS`.
 4. Restart the frontend dev server.
 
-## Important Network Note
-
-The frontend currently defaults to Lisk Sepolia in `utils/contract.ts`.
-
-Some user-facing messages and the deployment script still reference Avalanche Fuji. If you deploy to a different network, make sure these values match:
-
-- `VITE_CHAIN_ID`
-- `VITE_CHAIN_NAME`
-- `VITE_RPC_URL`
-- `VITE_EXPLORER_URL`
-- `VITE_FACTORY_ADDRESS`
-- `VITE_USDC_ADDRESS`
-- The stable token address in `contract/script/DeployLocalDAO.s.sol`
-- Any network names shown in UI messages
-
-Keeping these values consistent prevents wallet network errors and confusing explorer links.
-
 ## Main User Flow
 
 ### 1. User Logs In
