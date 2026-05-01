@@ -1,6 +1,6 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Compass, MessageSquare, User, Bell, LayoutDashboard, Search, Menu, X, Shield, Globe, CheckCircle, Wallet, House, LogOut, UserPlus, Coins } from 'lucide-react';
+import { Compass, MessageSquare, User, Bell, LayoutDashboard, Menu, X, Shield, Globe, CheckCircle, Wallet, House, LogOut, UserPlus, Coins } from 'lucide-react';
 import type { ViewState } from '../App';
 import { useWallets, type User as PrivyUser } from '@privy-io/react-auth';
 import { getChainName } from '../utils/chainUtils';
@@ -22,13 +22,10 @@ const AppShell: React.FC<AppShellProps> = ({ children, currentView, onViewChange
   const connectedEthWallet = wallets.find((wallet) => wallet.type === 'ethereum') as { address?: string; chainId?: string } | undefined;
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [notifications, setNotifications] = useState<Array<{ id: string; title: string; subtitle: string; view: ViewState }>>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [trackedDaoAddresses, setTrackedDaoAddresses] = useState<string[]>([]);
-  const [allDaos, setAllDaos] = useState<OnchainDao[]>([]);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   const LAST_SEEN_KEY = 'localdao_chat_last_seen_by_room';
@@ -53,7 +50,6 @@ const AppShell: React.FC<AppShellProps> = ({ children, currentView, onViewChange
   const refreshUnread = async () => {
     try {
       const daos = await fetchActiveDaos();
-      setAllDaos(daos);
       const daoAddresses = daos.map((dao) => dao.address.toLowerCase());
       setTrackedDaoAddresses(daoAddresses);
       const lastSeen = readLastSeen();
@@ -174,24 +170,6 @@ const AppShell: React.FC<AppShellProps> = ({ children, currentView, onViewChange
     { id: 'profile' as ViewState, label: 'Profile', icon: User },
   ], [unreadCount]);
 
-  const filteredSearchDaos = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return [];
-    return allDaos
-      .filter((dao) => dao.name.toLowerCase().includes(q) || dao.location.toLowerCase().includes(q))
-      .slice(0, 6);
-  }, [allDaos, searchQuery]);
-
-  const submitSearch = () => {
-    const value = searchQuery.trim();
-    if (!value) return;
-    if (typeof window !== 'undefined') {
-      sessionStorage.setItem('localdao_search_query', value);
-    }
-    onViewChange('discover');
-    setIsSearchOpen(false);
-  };
-
   const NavLink = ({ item }: { item: typeof navItems[0] }) => {
     const isActive = currentView === item.id;
     const Icon = item.icon;
@@ -283,66 +261,7 @@ const AppShell: React.FC<AppShellProps> = ({ children, currentView, onViewChange
             </button>
           </div>
 
-          <div className="flex-grow max-w-xl mx-4 hidden sm:block">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <input 
-                type="text" 
-                placeholder="Search properties or DAOs..." 
-                value={searchQuery}
-                onFocus={() => setIsSearchOpen(true)}
-                onBlur={() => setTimeout(() => setIsSearchOpen(false), 150)}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    submitSearch();
-                  }
-                }}
-                className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-              />
-              {isSearchOpen && searchQuery.trim() && (
-                <div className="absolute left-0 right-0 mt-2 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden">
-                  {filteredSearchDaos.length === 0 ? (
-                    <button
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={submitSearch}
-                      className="w-full text-left px-4 py-3 text-sm text-slate-600 hover:bg-slate-50"
-                    >
-                      Search Discover for “{searchQuery.trim()}”
-                    </button>
-                  ) : (
-                    <>
-                      {filteredSearchDaos.map((dao) => (
-                        <button
-                          key={dao.address}
-                          onMouseDown={(e) => e.preventDefault()}
-                          onClick={() => {
-                            if (typeof window !== 'undefined') {
-                              sessionStorage.setItem('localdao_search_query', dao.name);
-                            }
-                            onViewChange('discover');
-                            setIsSearchOpen(false);
-                          }}
-                          className="w-full text-left px-4 py-3 hover:bg-slate-50 border-b last:border-b-0 border-slate-100"
-                        >
-                          <p className="text-sm font-bold text-slate-900">{dao.name}</p>
-                          <p className="text-xs text-slate-500">{dao.location}</p>
-                        </button>
-                      ))}
-                      <button
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={submitSearch}
-                        className="w-full text-left px-4 py-2 text-xs font-bold text-emerald-600 hover:bg-emerald-50"
-                      >
-                        View all results in Discover
-                      </button>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
+          <div className="flex-1" />
 
           <div className="flex items-center gap-3 lg:gap-6">
             <div className="relative">
