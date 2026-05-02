@@ -4,7 +4,7 @@ import { ExternalLink, FileText, Github, Home, Shield } from 'lucide-react';
 
 const Footer: React.FC = () => {
   return (
-    <footer className="navy-bg text-white pt-16 pb-10">
+    <footer className="navy-bg text-white pt-12 sm:pt-16 pb-[max(2.5rem,env(safe-area-inset-bottom,0px)+1.25rem)] sm:pb-12">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-12 mb-12">
           <div>

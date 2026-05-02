@@ -296,8 +296,23 @@ const AppShell: React.FC<AppShellProps> = ({ children, currentView, onViewChange
     );
   };
 
+  const dockLabel: Record<ViewState, string> = {
+    dashboard: 'Home',
+    discover: 'Explore',
+    investments: 'Hoods',
+    wallet: 'Wallet',
+    yields: 'Yield',
+    kyc: 'Admin',
+    messages: 'Chat',
+    profile: 'Profile',
+    'create-dao': 'Create',
+    'vote-proposal': 'Vote',
+    landing: 'Home',
+    'my-daos': 'DAOs',
+  };
+
   return (
-    <div className="min-h-screen bg-[#FDFBF7] flex">
+    <div className="min-h-screen min-h-[100dvh] bg-[#FDFBF7] flex w-full max-w-[100vw] overflow-x-clip">
       {/* Desktop Sidebar */}
       <aside className="hidden lg:flex flex-col w-64 bg-white border-r border-slate-200 sticky top-0 h-screen p-6 overflow-y-auto">
         <div className="flex items-center gap-2 mb-10 cursor-pointer" onClick={() => onViewChange('dashboard')}>
@@ -354,14 +369,16 @@ const AppShell: React.FC<AppShellProps> = ({ children, currentView, onViewChange
 
       {/* Main Content Area */}
       <div className="flex-grow flex flex-col min-w-0">
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 lg:px-8 sticky top-0 z-40">
-          <div className="flex items-center gap-2 lg:gap-4">
+        <header className="min-h-16 shrink-0 bg-white border-b border-slate-200 flex items-center justify-between gap-2 px-3 sm:px-4 lg:px-8 sticky top-0 z-40 pt-[env(safe-area-inset-top,0px)]">
+          <div className="flex items-center gap-1.5 sm:gap-2 lg:gap-4 min-w-0">
             <button
               onClick={() => onViewChange('landing')}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors text-xs sm:text-sm font-semibold"
+              className="inline-flex items-center gap-1.5 px-2 sm:px-3 py-2 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors text-xs sm:text-sm font-semibold shrink-0"
+              type="button"
+              aria-label="Back to home"
             >
-              <ArrowLeft className="w-4 h-4" />
-              Home
+              <ArrowLeft className="w-4 h-4 shrink-0" />
+              <span className="hidden sm:inline">Home</span>
             </button>
             <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-600 lg:hidden">
               <Menu className="w-6 h-6" />
@@ -383,7 +400,9 @@ const AppShell: React.FC<AppShellProps> = ({ children, currentView, onViewChange
               )}
               </button>
               {isNotificationsOpen && (
-                <div className="absolute right-0 mt-2 w-80 max-h-96 overflow-y-auto bg-white border border-slate-200 rounded-2xl shadow-xl z-50">
+                <div
+                  className="fixed sm:absolute inset-x-3 sm:inset-x-auto top-[calc(4rem+env(safe-area-inset-top,0px))] sm:top-full sm:right-0 left-auto mt-0 sm:mt-2 w-auto sm:w-80 max-w-[min(100vw-1.5rem,20rem)] max-h-[min(24rem,70vh)] sm:max-h-96 overflow-y-auto bg-white border border-slate-200 rounded-2xl shadow-xl z-50 overscroll-contain"
+                >
                   <div className="p-3 border-b border-slate-100 flex items-center justify-between">
                     <p className="text-sm font-bold text-slate-900">Notifications</p>
                     <button
@@ -458,32 +477,46 @@ const AppShell: React.FC<AppShellProps> = ({ children, currentView, onViewChange
           </div>
         </header>
 
-        <main className="flex-grow overflow-auto p-4 lg:p-8">
+        <main className="flex-grow overflow-x-clip overflow-y-auto p-3 sm:p-4 lg:p-8 pb-[calc(5.25rem+env(safe-area-inset-bottom,0px))] lg:pb-8">
           {children}
         </main>
 
-        <nav className="lg:hidden h-16 bg-white border-t border-slate-200 flex items-center justify-around px-2 pb-safe">
-          {navItems.slice(0, 5).map(item => {
-            const isActive = currentView === item.id;
-            const Icon = item.icon;
-            return (
-              <button 
-                key={item.id} 
-                onClick={() => onViewChange(item.id)}
-                className={`flex flex-col items-center gap-1 ${isActive ? 'text-emerald-600' : 'text-slate-400'}`}
-              >
-                <Icon className="w-6 h-6" />
-                <span className="text-[10px] font-medium">{item.label.split(' ')[0]}</span>
-              </button>
-            );
-          })}
+        <nav className="lg:hidden shrink-0 bg-white border-t border-slate-200 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1 z-40">
+          <div className="flex overflow-x-auto no-scrollbar gap-0.5 px-2 pb-1 items-center justify-start">
+            {navItems.map((item) => {
+              const isActive = currentView === item.id;
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => onViewChange(item.id)}
+                  className={`flex flex-col items-center gap-0.5 min-w-[4.125rem] max-w-[4.75rem] px-1 py-2 rounded-xl shrink-0 ${
+                    isActive ? 'text-emerald-600 bg-emerald-50/70' : 'text-slate-400'
+                  }`}
+                >
+                  <div className="relative">
+                    <Icon className="w-[1.35rem] h-[1.35rem]" />
+                    {typeof item.badge === 'number' && item.badge > 0 && (
+                      <span className="absolute -top-1 -right-2 min-w-4 h-4 px-[3px] flex items-center justify-center rounded-full bg-red-500 text-white text-[8px] font-bold leading-none border border-white">
+                        {item.badge > 99 ? '99+' : item.badge}
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-[9px] font-semibold leading-tight text-center line-clamp-2 w-full px-px">
+                    {dockLabel[item.id] ?? item.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </nav>
       </div>
 
       {isSidebarOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
           <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setIsSidebarOpen(false)}></div>
-          <div className="absolute left-0 top-0 bottom-0 w-72 bg-white p-6 shadow-2xl flex flex-col">
+          <div className="absolute left-0 top-0 bottom-0 w-[min(18rem,88vw)] max-w-[20rem] bg-white p-5 sm:p-6 shadow-2xl flex flex-col overflow-y-auto">
             <div className="flex items-center justify-between mb-8">
               <div className="flex items-center gap-2">
                 <div className="navy-bg p-1.5 rounded-lg">

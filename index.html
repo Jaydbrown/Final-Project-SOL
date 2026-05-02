@@ -3,14 +3,28 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>LocalDAO | Invest in Your Neighborhood</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
+    html {
+      overflow-x: clip;
+      -webkit-text-size-adjust: 100%;
+    }
     body {
       font-family: 'Inter', sans-serif;
+      overflow-x: clip;
+      max-width: 100vw;
+    }
+    /* Horizontal scroll rails (mobile nav dock) — hide scrollbar, keep swipe */
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
     }
     .sage-bg { background-color: #7D9D85; }
     .sage-text { color: #7D9D85; }
@@ -30,8 +44,8 @@
 </script>
 <link rel="stylesheet" href="/index.css">
 </head>
-<body class="cream-bg navy-text antialiased min-h-screen">
-  <div id="root" class="min-h-screen"></div>
+<body class="cream-bg navy-text antialiased min-h-screen min-h-[100dvh]">
+  <div id="root" class="min-h-screen min-h-[100dvh] w-full overflow-x-clip"></div>
 <script type="module" src="/index.tsx"></script>
 </body>
 </html>

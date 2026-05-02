@@ -144,7 +144,7 @@ const VotingInterface: React.FC<VotingInterfaceProps> = ({ proposalId, onBack })
   const canWalletVote = Boolean(walletAddress && daoRole?.isVerifiedMember);
 
   return (
-    <div className="max-w-4xl mx-auto py-8 px-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="max-w-4xl mx-auto py-4 sm:py-8 px-3 sm:px-4 animate-in fade-in slide-in-from-bottom-4 duration-500 w-full min-w-0">
       <button
         onClick={onBack}
         className="flex items-center gap-2 text-slate-500 hover:text-slate-900 transition-colors mb-8 group"
@@ -155,7 +155,7 @@ const VotingInterface: React.FC<VotingInterfaceProps> = ({ proposalId, onBack })
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-8">
-          <div className="bg-white rounded-3xl border border-slate-200 p-8 space-y-6">
+          <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-200 p-4 sm:p-8 space-y-4 sm:space-y-6">
             <div className="flex items-center gap-3">
               <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 bg-slate-100 px-3 py-1 rounded">
                 Proposal #{investment.id}
@@ -165,12 +165,12 @@ const VotingInterface: React.FC<VotingInterfaceProps> = ({ proposalId, onBack })
                 {status}
               </span>
             </div>
-            <h1 className="text-3xl font-bold text-slate-900">{investment.name}</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 break-words">{investment.name}</h1>
             <p className="text-slate-500 text-sm">
               {investment.daoName} ({maskAddress(investment.daoAddress)})
             </p>
 
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
               <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
                 <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Treasury Ask</p>
                 <p className="text-lg font-bold text-slate-900">{formatUsdcAmount(investment.fundNeeded)}</p>
@@ -195,7 +195,7 @@ const VotingInterface: React.FC<VotingInterfaceProps> = ({ proposalId, onBack })
         </div>
 
         <div className="space-y-6">
-          <div className="bg-white rounded-[2rem] border border-slate-200 p-8 shadow-sm space-y-6 sticky top-24">
+          <div className="bg-white rounded-2xl sm:rounded-[2rem] border border-slate-200 p-4 sm:p-8 shadow-sm space-y-4 sm:space-y-6 max-lg:relative lg:sticky lg:top-24">
             <div className="text-center">
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Time Remaining</p>
               <span className="text-2xl font-bold text-slate-900">

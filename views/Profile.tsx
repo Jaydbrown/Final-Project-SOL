@@ -128,8 +128,8 @@ const ProfileView: React.FC = () => {
   };
 
   return (
-    <div className="max-w-5xl mx-auto pb-12 animate-in fade-in duration-700 space-y-6">
-      <Card className="p-8">
+    <div className="max-w-5xl mx-auto pb-6 lg:pb-12 animate-in fade-in duration-700 space-y-4 sm:space-y-6 w-full min-w-0">
+      <Card className="p-4 sm:p-8">
         <input
           ref={avatarInputRef}
           type="file"
@@ -192,12 +192,12 @@ const ProfileView: React.FC = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
-          <Card className="p-8">
+          <Card className="p-4 sm:p-8">
             <h2 className="text-lg font-bold text-slate-900 mb-4">Account Overview</h2>
             {loading ? (
               <p className="text-slate-500 text-sm">Loading profile data...</p>
             ) : (
-              <div className="grid grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
                 <div>
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Active DAOs</p>
                   <p className="text-2xl font-extrabold text-slate-900">{daos.length}</p>
@@ -214,10 +214,10 @@ const ProfileView: React.FC = () => {
             )}
           </Card>
 
-          <Card className="p-8">
+          <Card className="p-4 sm:p-8">
             <h2 className="text-lg font-bold text-slate-900 mb-4">Connected Wallet</h2>
-            <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
-              <div className="flex items-center gap-4">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+              <div className="flex items-center gap-4 min-w-0">
                 <div className="p-3 bg-white rounded-xl shadow-sm">
                   <Wallet className="w-5 h-5 text-blue-600" />
                 </div>

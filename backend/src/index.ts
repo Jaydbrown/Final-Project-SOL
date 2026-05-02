@@ -15,10 +15,12 @@ app.use(express.json());
 // Import routes
 import authRoutes from './routes/auth.routes';
 import chatRoutes from './routes/chat.routes';
+import aiRoutes from './routes/ai.routes';
 
 // Use routes
 app.use('/api/auth', authRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/ai', aiRoutes);
 
 // Test endpoint to create a user
 app.post('/api/users', async (req, res) => {
@@ -82,11 +84,13 @@ app.get('/api/health', async (_req, res) => {
   const oauthMailer = !!process.env.GMAIL_MAILER_REFRESH_TOKEN?.trim();
   const appPassword = !!process.env.GMAIL_APP_PASSWORD?.trim();
   const rabbit = await rabbitHealthCheck();
+  const geminiConfigured = !!process.env.GEMINI_API_KEY?.trim();
   res.json({
     status: 'ok',
     gmailConfigured: gmailOAuth,
     outboundMailConfigured: fromEmail && (oauthMailer || appPassword),
     rabbitmq: rabbit,
+    geminiConfigured,
     timestamp: new Date().toISOString(),
   });
 });
@@ -100,6 +104,7 @@ app.get('/', (req, res) => {
       'POST /api/chat/webhook/new-message': 'Enqueue chat notify job (HTTP 202) — requires workers',
       'POST /api/chat/subscribe': 'Subscribe to chat notifications',
       'GET /api/chat/subscriptions/:walletAddress': 'Get chat subscriptions',
+      'POST /api/ai/chat': 'Homepage Gemini assistant (body: { messages })',
       'POST /api/users': 'Create user',
       'GET /api/users/:walletAddress': 'Get user'
     }
@@ -126,6 +131,11 @@ app.listen(PORT, () => {
     console.log('🐇 RabbitMQ: RABBITMQ_URL set — run `npm run worker` in backend for consumers.');
   } else {
     console.warn('🐇 RabbitMQ: disabled — webhook will process notifications synchronously.');
+  }
+  if (process.env.GEMINI_API_KEY?.trim()) {
+    console.log(`🤖 Gemini: HOMEPAGE AI enabled (model ${process.env.GEMINI_MODEL || 'gemini-2.0-flash'}).`);
+  } else {
+    console.warn('🤖 Gemini: GEMINI_API_KEY not set — POST /api/ai/chat returns 503.');
   }
 });
 

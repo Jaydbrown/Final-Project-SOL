@@ -84,20 +84,22 @@ export const Modal: React.FC<{
 }> = ({ isOpen, onClose, title, children, footer }) => {
   if (!isOpen) return null;
   const content = (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[100] flex items-end justify-center sm:items-center p-0 sm:p-4 pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)]">
       <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose}></div>
-      <div className="relative w-full max-w-lg bg-white rounded-[2rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-        <div className="flex items-center justify-between p-6 border-b border-slate-100">
-          <h3 className="text-xl font-bold text-slate-900">{title}</h3>
-          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-900 rounded-full transition-colors">
+      <div className="relative w-full sm:max-w-lg max-h-[min(92dvh,100vh)] sm:max-h-[min(92dvh,44rem)] flex flex-col bg-white rounded-t-[1.75rem] sm:rounded-[2rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 sm:mb-0 mb-0">
+        <div className="flex items-center justify-between gap-3 p-4 sm:p-6 shrink-0 border-b border-slate-100">
+          <h3 className="text-lg sm:text-xl font-bold text-slate-900 leading-tight pr-2">{title}</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2 text-slate-400 hover:text-slate-900 rounded-full transition-colors shrink-0"
+          >
             <X className="w-5 h-5" />
           </button>
         </div>
-        <div className="p-6">
-          {children}
-        </div>
+        <div className="p-4 sm:p-6 overflow-y-auto overscroll-contain flex-1 min-h-0">{children}</div>
         {footer && (
-          <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
+          <div className="p-4 sm:p-6 bg-slate-50 border-t border-slate-100 flex flex-col-reverse sm:flex-row sm:justify-end gap-2 sm:gap-3 shrink-0">
             {footer}
           </div>
         )}
@@ -195,7 +197,7 @@ export const MetricCard: React.FC<{
   sublabel?: string;
   className?: string;
 }> = ({ label, value, sublabel, className = '' }) => (
-  <Card className={`p-6 ${className}`}>
+  <Card className={`p-4 sm:p-6 ${className}`}>
     <p className="text-slate-500 text-sm">{label}</p>
     <h3 className="text-2xl font-bold text-slate-900 mt-1">{value}</h3>
     {sublabel && <p className="text-xs text-slate-500 mt-1">{sublabel}</p>}

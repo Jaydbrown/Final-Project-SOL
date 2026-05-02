@@ -74,7 +74,7 @@ const GmailConnectionStatus: React.FC<{ walletAddress: string }> = ({ walletAddr
       {showDetails && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setShowDetails(false)} />
-          <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-xl border border-slate-200 p-4 z-50">
+          <div className="fixed sm:absolute inset-x-3 sm:inset-x-auto bottom-[max(1rem,env(safe-area-inset-bottom))] sm:bottom-auto sm:right-0 left-auto top-auto sm:top-full sm:mt-2 w-auto sm:w-80 max-w-[min(calc(100vw-1.5rem),20rem)] sm:max-w-none max-h-[min(70vh,28rem)] overflow-y-auto bg-white rounded-xl shadow-xl border border-slate-200 p-4 z-50">
             <div className="flex items-center justify-between mb-3">
               <h4 className="font-semibold text-slate-900 flex items-center gap-2">
                 <Mail className="w-4 h-4 text-emerald-600" />
@@ -293,36 +293,39 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onVote, user }) => 
   if (loading) return <div className="max-w-7xl mx-auto py-10 text-slate-500">Loading dashboard...</div>;
 
   return (
-    <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500">
+    <div className="max-w-7xl mx-auto space-y-6 sm:space-y-8 animate-in fade-in duration-500 w-full min-w-0">
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
           <p className="text-slate-500 mt-1">Welcome back{user?.email?.address ? `, ${user.email.address.split('@')[0]}` : ''}.</p>
           {error && <p className="text-red-600 text-sm mt-1">{error}</p>}
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-2 sm:gap-3 w-full sm:w-auto justify-stretch sm:justify-end">
           {walletAddress && (
             <GmailConnectionStatus walletAddress={walletAddress} />
           )}
           <button
+            type="button"
             onClick={() => onViewChange('discover')}
-            className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-2 transition-colors"
+            className="flex-1 min-[400px]:flex-none min-h-[42px] px-3 sm:px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-bold text-slate-700 hover:bg-slate-50 flex items-center justify-center gap-2 transition-colors"
           >
-            <Search className="w-4 h-4" />
+            <Search className="w-4 h-4 shrink-0" />
             Discover
           </button>
           <button
+            type="button"
             onClick={() => onViewChange('kyc')}
-            className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-2 transition-colors"
+            className="flex-1 min-[400px]:flex-none min-h-[42px] px-3 sm:px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-bold text-slate-700 hover:bg-slate-50 flex items-center justify-center gap-2 transition-colors"
           >
-            <ShieldCheck className="w-4 h-4" />
-            KYC / Admin
+            <ShieldCheck className="w-4 h-4 shrink-0" />
+            <span className="truncate">KYC / Admin</span>
           </button>
           <button
+            type="button"
             onClick={() => onViewChange('create-dao')}
-            className="px-4 py-2 navy-bg text-white rounded-xl text-sm font-bold flex items-center gap-2"
+            className="w-full sm:w-auto min-[400px]:w-auto navy-bg text-white px-4 py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2"
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="w-4 h-4 shrink-0" />
             Create DAO
           </button>
         </div>
@@ -336,9 +339,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onVote, user }) => 
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <Card className="p-6 space-y-4">
+        <Card className="p-4 sm:p-6 space-y-4">
           <div className="flex items-center justify-between gap-2">
-            <h2 className="text-lg font-bold text-slate-900">Active DAOs</h2>
+            <h2 className="text-base sm:text-lg font-bold text-slate-900">Active DAOs</h2>
             <p className="text-xs text-slate-500">{daos.length} total</p>
           </div>
           {daos.length === 0 ? (
@@ -387,9 +390,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onVote, user }) => 
           )}
         </Card>
 
-        <Card className="p-6 space-y-4">
+        <Card className="p-4 sm:p-6 space-y-4">
           <div className="flex items-center justify-between gap-2">
-            <h2 className="text-lg font-bold text-slate-900">Proposals Needing Votes</h2>
+            <h2 className="text-base sm:text-lg font-bold text-slate-900">Proposals Needing Votes</h2>
             <p className="text-xs text-slate-500">{totals.proposed.length} total</p>
           </div>
           {totals.proposed.length === 0 ? (
@@ -405,7 +408,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onVote, user }) => 
                   <div key={`${proposal.daoAddress}-${proposal.id}`} className="p-4 border border-slate-200 rounded-xl flex flex-col sm:flex-row justify-between sm:items-center gap-3">
                     <div>
                       <p className="font-bold text-slate-900">{proposal.name}</p>
-                      <div className="flex items-center gap-2 mt-1">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1">
                         <span className="text-xs text-slate-500">{proposal.daoName}</span>
                         <StatusChip status={statusLabel(proposal.status)} />
                         <DeadlineChip secondsLeft={Number(proposal.deadline) - Math.floor(Date.now() / 1000)} />
@@ -453,9 +456,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onVote, user }) => 
         </Card>
       </div>
 
-      <Card className="p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold text-slate-900">Recent DAO Activity</h2>
+      <Card className="p-4 sm:p-6 space-y-4">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-base sm:text-lg font-bold text-slate-900">Recent DAO Activity</h2>
           <p className="text-xs text-slate-500">Newest first</p>
         </div>
         {recentActivity.length === 0 ? (
@@ -477,8 +480,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onVote, user }) => 
 
       {/* Email Notification Info Banner */}
       {walletAddress && (
-        <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-xl p-4">
-          <div className="flex items-start gap-3">
+        <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-xl p-4 overflow-hidden">
+          <div className="flex flex-col sm:flex-row items-start gap-3">
             <Mail className="w-5 h-5 text-emerald-600 mt-0.5" />
             <div className="flex-1">
               <h3 className="font-semibold text-slate-900">Stay Updated via Email</h3>
@@ -487,7 +490,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onVote, user }) => 
                   ? "You're a member of one or more DAOs. Connect your Gmail to receive notifications about proposals, votes, and chat messages."
                   : "Join a DAO through KYC verification to start receiving email notifications about investment opportunities."}
               </p>
-              <div className="flex gap-2 mt-3">
+              <div className="flex flex-wrap gap-2 mt-3">
                 <button
                   onClick={() => onViewChange('kyc')}
                   className="px-3 py-1.5 text-xs font-medium bg-white border border-emerald-200 text-emerald-700 rounded-lg hover:bg-emerald-50"
@@ -503,8 +506,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onVote, user }) => 
               </div>
             </div>
             <button
+              type="button"
               onClick={() => setShowNotificationSettings(!showNotificationSettings)}
-              className="p-1.5 hover:bg-white rounded-lg transition"
+              className="p-1.5 hover:bg-white rounded-lg transition self-start sm:self-auto shrink-0"
+              aria-label="Notification settings"
             >
               <Settings className="w-4 h-4 text-slate-500" />
             </button>

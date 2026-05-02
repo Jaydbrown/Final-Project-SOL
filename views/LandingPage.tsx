@@ -8,6 +8,7 @@ import Properties from "../components/Properties";
 import TrustBadges from "../components/TrustBadges";
 import Faqs from "../components/Faqs";
 import Footer from "../components/Footer";
+import LandingAiChat from "../components/LandingAiChat";
 import { ViewState } from "@/App";
 
 interface LandingPageProps {
@@ -43,6 +44,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
         <Faqs />
       </main>
       <Footer />
+      <LandingAiChat />
     </div>
   );
 };

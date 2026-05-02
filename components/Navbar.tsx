@@ -68,7 +68,7 @@ const Navbar: React.FC<{ onLaunch: () => void; isAuthenticated?: boolean }> = ({
   };
 
   return (
-    <div className="sticky top-4 z-50 px-3 sm:px-5 lg:px-8">
+    <div className="sticky z-50 px-3 sm:px-5 lg:px-8 top-[max(0.75rem,env(safe-area-inset-top,0px))]">
       <nav
         className={`max-w-7xl mx-auto rounded-2xl backdrop-blur-md border transition-all duration-300 ${
           isScrolled

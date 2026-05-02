@@ -203,7 +203,7 @@ const GmailNotificationSettings: React.FC<{
       {showSettings && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setShowSettings(false)} />
-          <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-xl border border-slate-200 p-4 z-50">
+          <div className="fixed sm:absolute inset-x-3 sm:inset-x-auto bottom-[max(1rem,env(safe-area-inset-bottom))] sm:bottom-auto sm:right-0 left-auto top-auto sm:top-full sm:mt-2 w-auto sm:w-80 max-w-[min(calc(100vw-1.5rem),20rem)] max-h-[min(70vh,28rem)] overflow-y-auto bg-white rounded-xl shadow-xl border border-slate-200 p-4 z-50">
             <div className="flex items-center justify-between mb-3">
               <h4 className="font-semibold text-slate-900 flex items-center gap-2">
                 <Mail className="w-4 h-4 text-emerald-600" />
@@ -229,8 +229,8 @@ const GmailNotificationSettings: React.FC<{
               </div>
             ) : (
               <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-slate-700">Receive notifications for {daoName}</span>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <span className="text-sm text-slate-700 break-words min-w-0">Receive notifications for {daoName}</span>
                   <button
                     onClick={toggleSubscription}
                     disabled={loading}
@@ -592,7 +592,7 @@ const MessagesView: React.FC = () => {
   };
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6 animate-in fade-in duration-500">
+    <div className="max-w-7xl mx-auto space-y-4 sm:space-y-6 animate-in fade-in duration-500 w-full min-w-0 px-0">
       <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Community Chat</h1>
@@ -625,9 +625,13 @@ const MessagesView: React.FC = () => {
           <p className="text-slate-500">No active DAO rooms available.</p>
         </Card>
       ) : (
-        <Card className="p-0 overflow-hidden min-h-[72vh]">
-          <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] h-full">
-            <aside className={`border-r border-slate-200 bg-white ${mobileShowRooms ? "block" : "hidden lg:block"}`}>
+        <Card className="p-0 overflow-hidden min-h-[calc(100dvh-11.5rem)] lg:min-h-[72vh]">
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,280px)_1fr] xl:grid-cols-[320px_1fr] min-h-[inherit] h-full lg:h-auto">
+            <aside
+              className={`border-r border-slate-200 bg-white min-h-0 flex flex-col ${
+                mobileShowRooms ? "flex" : "hidden"
+              } lg:flex`}
+            >
               <div className="p-4 border-b border-slate-100 space-y-3">
                 <h2 className="text-sm font-bold text-slate-900">Rooms</h2>
                 <div className="relative">
@@ -642,7 +646,7 @@ const MessagesView: React.FC = () => {
                 </div>
               </div>
 
-              <div className="h-[calc(72vh-92px)] lg:h-[calc(72vh-92px)] overflow-y-auto p-2 space-y-1">
+              <div className="flex-1 min-h-0 max-h-[50dvh] lg:max-h-none lg:h-[calc(72vh-92px)] overflow-y-auto p-2 space-y-1">
                 {filteredDaos.map((dao) => {
                   const summary = roomSummaries[dao.address.toLowerCase()];
                   const isSelected = selectedDao?.address.toLowerCase() === dao.address.toLowerCase();
@@ -688,7 +692,11 @@ const MessagesView: React.FC = () => {
               </div>
             </aside>
 
-            <section className={`${mobileShowRooms ? "hidden lg:flex" : "flex"} flex-col bg-slate-50/50 min-h-[72vh]`}>
+            <section
+              className={`flex flex-col bg-slate-50/50 min-h-[calc(100dvh-11.5rem)] lg:min-h-[72vh] ${
+                mobileShowRooms ? "hidden lg:flex" : "flex"
+              }`}
+            >
               <div className="p-4 border-b border-slate-100 bg-white flex items-center gap-3 min-w-0">
                 <button
                   onClick={() => setMobileShowRooms(true)}
