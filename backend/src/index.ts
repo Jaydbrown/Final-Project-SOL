@@ -1,0 +1,124 @@
+import express from 'express';
+import cors from 'cors';
+import dotenv from 'dotenv';
+import { PrismaClient } from '@prisma/client';
+
+dotenv.config();
+
+const app = express();
+const prisma = new PrismaClient();
+
+app.use(cors());
+app.use(express.json());
+
+// Import routes
+import authRoutes from './routes/auth.routes';
+import chatRoutes from './routes/chat.routes';
+
+// Use routes
+app.use('/api/auth', authRoutes);
+app.use('/api/chat', chatRoutes);
+
+// Test endpoint to create a user
+app.post('/api/users', async (req, res) => {
+  try {
+    const { walletAddress } = req.body;
+    const user = await prisma.user.upsert({
+      where: { walletAddress },
+      update: {},
+      create: { walletAddress }
+    });
+    res.json(user);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get user by wallet address
+app.get('/api/users/:walletAddress', async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { walletAddress: req.params.walletAddress },
+      include: { 
+        preferences: true, 
+        notifications: true 
+      }
+    });
+    res.json(user || { error: 'User not found' });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get user's chat subscriptions separately
+app.get('/api/users/:walletAddress/subscriptions', async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { walletAddress: req.params.walletAddress },
+      include: { chatSubscriptions: true }
+    });
+    res.json(user?.chatSubscriptions || []);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Health check
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    gmailConfigured: !!(process.env.GMAIL_CLIENT_ID && process.env.GMAIL_CLIENT_SECRET),
+    timestamp: new Date().toISOString()
+  });
+});
+
+app.get('/', (req, res) => {
+  res.json({ 
+    message: 'LocalDAO Backend Running!',
+    endpoints: {
+      'POST /api/auth/gmail/connect': 'Connect Gmail account',
+      'GET /api/auth/gmail/callback': 'OAuth callback',
+      'POST /api/chat/webhook/new-message': 'Webhook for new chat messages',
+      'POST /api/chat/subscribe': 'Subscribe to chat notifications',
+      'GET /api/chat/subscriptions/:walletAddress': 'Get chat subscriptions',
+      'POST /api/users': 'Create user',
+      'GET /api/users/:walletAddress': 'Get user'
+    }
+  });
+});
+
+const PORT = process.env.PORT || 3001;
+app.listen(PORT, () => {
+  console.log(`✅ Server running on http://localhost:${PORT}`);
+  console.log(`📧 Gmail: ${process.env.GMAIL_CLIENT_ID ? 'Configured' : 'Not configured'}`);
+});
+
+// Update user email
+app.post('/api/update-email', async (req, res) => {
+  try {
+    const { walletAddress, email } = req.body;
+    console.log('📧 Updating email for wallet:', walletAddress, 'to:', email);
+    
+    // First, remove email from any other user
+    await prisma.user.updateMany({
+      where: { 
+        email: email,
+        NOT: { walletAddress: walletAddress }
+      },
+      data: { email: null }
+    });
+    
+    // Update or create user with email
+    const user = await prisma.user.upsert({
+      where: { walletAddress },
+      update: { email },
+      create: { walletAddress, email }
+    });
+    
+    console.log('✅ Email updated:', user);
+    res.json({ success: true, user });
+  } catch (error: any) {
+    console.error('❌ Error updating email:', error);
+    res.status(500).json({ error: error.message });
+  }
+});

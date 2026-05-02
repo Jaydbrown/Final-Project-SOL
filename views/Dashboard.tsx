@@ -1,17 +1,200 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Plus, Search, ShieldCheck } from 'lucide-react';
+import { Plus, Search, ShieldCheck, Mail, Bell, BellOff, Check, Settings } from 'lucide-react';
 import { useWallets } from "@privy-io/react-auth";
 import type { ViewState } from '../App';
 import { Card, DeadlineChip, FundingProgress, MetricCard, StatusChip } from '../components/UI';
 import type { User } from '@privy-io/react-auth';
 import { fetchActiveDaos, fetchAllInvestments, fetchDaoUserRole, fetchYieldRows, formatUsdcAmount, statusLabel, type DaoUserRole, type OnchainDao, type OnchainInvestment, type YieldRow } from '../utils/localDaoContracts';
-import { formatTxError, notifyError } from '../utils/toast';
+import { formatTxError, notifyError, notifySuccess, notifyWarning } from '../utils/toast';
+
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
 
 interface DashboardProps {
   onViewChange: (view: ViewState) => void;
   onVote: (id: string) => void;
   user: User | null;
 }
+
+// Component for Gmail connection status
+const GmailConnectionStatus: React.FC<{ walletAddress: string }> = ({ walletAddress }) => {
+  const [isConnected, setIsConnected] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
+
+  useEffect(() => {
+    if (walletAddress) {
+      checkConnection();
+    }
+  }, [walletAddress]);
+
+  const checkConnection = async () => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/auth/preferences/${walletAddress}`);
+      const data = await response.json();
+      setIsConnected(!!data.gmailConnected);
+    } catch (error) {
+      console.error("Error checking Gmail connection:", error);
+    }
+  };
+
+  const connectGmail = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/auth/gmail/connect`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ walletAddress })
+      });
+      const { url } = await response.json();
+      window.location.href = url;
+    } catch (error) {
+      console.error("Error connecting Gmail:", error);
+      notifyError("Failed to connect Gmail");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setShowDetails(!showDetails)}
+        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-2 ${
+          isConnected 
+            ? "bg-emerald-50 text-emerald-700 border border-emerald-200" 
+            : "bg-slate-100 text-slate-600 border border-slate-200"
+        }`}
+      >
+        <Mail className="w-3.5 h-3.5" />
+        {isConnected ? "Gmail Connected" : "Connect Gmail"}
+      </button>
+
+      {showDetails && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setShowDetails(false)} />
+          <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-xl border border-slate-200 p-4 z-50">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="font-semibold text-slate-900 flex items-center gap-2">
+                <Mail className="w-4 h-4 text-emerald-600" />
+                Email Notifications
+              </h4>
+              <button
+                onClick={() => setShowDetails(false)}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                ✕
+              </button>
+            </div>
+
+            {!isConnected ? (
+              <div className="space-y-3">
+                <p className="text-sm text-slate-600">
+                  Connect your Gmail to receive email notifications about:
+                </p>
+                <ul className="text-xs text-slate-600 space-y-1 list-disc list-inside">
+                  <li>New investment proposals in your DAOs</li>
+                  <li>Yield deposits and claim opportunities</li>
+                  <li>Vote reminders and updates</li>
+                  <li>Chat messages in your communities</li>
+                </ul>
+                <button
+                  onClick={connectGmail}
+                  disabled={loading}
+                  className="w-full py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  {loading ? "Connecting..." : "Connect Gmail Account"}
+                </button>
+                <p className="text-xs text-slate-500 text-center">
+                  We'll only send relevant DAO notifications
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-sm text-emerald-700 bg-emerald-50 p-2 rounded-lg">
+                  <Check className="w-4 h-4" />
+                  <span>Your Gmail is connected</span>
+                </div>
+                <button
+                  onClick={connectGmail}
+                  className="w-full py-2 border border-slate-200 rounded-lg text-sm font-medium hover:bg-slate-50"
+                >
+                  Reconnect Gmail
+                </button>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
+// Component for DAO-specific notification settings
+const DaoNotificationToggle: React.FC<{
+  walletAddress: string;
+  daoAddress: string;
+  daoName: string;
+}> = ({ walletAddress, daoAddress, daoName }) => {
+  const [isSubscribed, setIsSubscribed] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (walletAddress) {
+      checkSubscription();
+    }
+  }, [walletAddress, daoAddress]);
+
+  const checkSubscription = async () => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/notifications/chat/subscriptions/${walletAddress}`);
+      const subs = await response.json();
+      const daoSub = subs.find((s: any) => s.daoAddress === daoAddress.toLowerCase());
+      setIsSubscribed(daoSub?.receiveNotifications || false);
+    } catch (error) {
+      console.error("Error checking subscription:", error);
+    }
+  };
+
+  const toggleSubscription = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/notifications/chat/subscribe`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          walletAddress,
+          daoAddress,
+          receiveNotifications: !isSubscribed
+        })
+      });
+      
+      if (response.ok) {
+        setIsSubscribed(!isSubscribed);
+        notifySuccess(isSubscribed ? "Notifications disabled for this DAO" : "Email notifications enabled for this DAO!");
+      }
+    } catch (error) {
+      console.error("Error toggling subscription:", error);
+      notifyError("Failed to update notification preferences");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <button
+      onClick={toggleSubscription}
+      disabled={loading}
+      className={`p-1.5 rounded-lg transition ${
+        isSubscribed 
+          ? "text-emerald-600 hover:bg-emerald-50" 
+          : "text-slate-400 hover:bg-slate-100"
+      }`}
+      title={isSubscribed ? "Disable email notifications" : "Enable email notifications"}
+    >
+      {isSubscribed ? <Bell className="w-3.5 h-3.5" /> : <BellOff className="w-3.5 h-3.5" />}
+    </button>
+  );
+};
 
 const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onVote, user }) => {
   const [daos, setDaos] = useState<OnchainDao[]>([]);
@@ -22,6 +205,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onVote, user }) => 
   const [rolesByDao, setRolesByDao] = useState<Record<string, DaoUserRole>>({});
   const [daoPage, setDaoPage] = useState(1);
   const [proposalPage, setProposalPage] = useState(1);
+  const [showNotificationSettings, setShowNotificationSettings] = useState(false);
   const PAGE_SIZE = 5;
   const { wallets } = useWallets();
   const walletAddress = wallets.find((item) => item.type === "ethereum")?.address as `0x${string}` | undefined;
@@ -113,6 +297,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onVote, user }) => 
           {error && <p className="text-red-600 text-sm mt-1">{error}</p>}
         </div>
         <div className="flex gap-3">
+          {walletAddress && (
+            <GmailConnectionStatus walletAddress={walletAddress} />
+          )}
           <button
             onClick={() => onViewChange('discover')}
             className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-2 transition-colors"
@@ -157,9 +344,20 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onVote, user }) => 
               <div className="max-h-96 overflow-y-auto pr-1 space-y-3">
                 {pagedDaos.map((dao) => (
                   <div key={dao.address} className="p-4 border border-slate-200 rounded-xl">
-                    <p className="font-bold text-slate-900">{dao.name}</p>
-                    <p className="text-xs text-slate-500">{dao.location}</p>
-                    <p className="text-xs text-slate-500 mt-1">TVL: {dao.tvlFormatted}</p>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-bold text-slate-900">{dao.name}</p>
+                        <p className="text-xs text-slate-500">{dao.location}</p>
+                        <p className="text-xs text-slate-500 mt-1">TVL: {dao.tvlFormatted}</p>
+                      </div>
+                      {walletAddress && (
+                        <DaoNotificationToggle
+                          walletAddress={walletAddress}
+                          daoAddress={dao.address}
+                          daoName={dao.name}
+                        />
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -271,6 +469,43 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onVote, user }) => 
           </div>
         )}
       </Card>
+
+      {/* Email Notification Info Banner */}
+      {walletAddress && (
+        <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-xl p-4">
+          <div className="flex items-start gap-3">
+            <Mail className="w-5 h-5 text-emerald-600 mt-0.5" />
+            <div className="flex-1">
+              <h3 className="font-semibold text-slate-900">Stay Updated via Email</h3>
+              <p className="text-sm text-slate-600 mt-1">
+                {daos.some(dao => rolesByDao[dao.address.toLowerCase()]?.isVerifiedMember) 
+                  ? "You're a member of one or more DAOs. Connect your Gmail to receive notifications about proposals, votes, and chat messages."
+                  : "Join a DAO through KYC verification to start receiving email notifications about investment opportunities."}
+              </p>
+              <div className="flex gap-2 mt-3">
+                <button
+                  onClick={() => onViewChange('kyc')}
+                  className="px-3 py-1.5 text-xs font-medium bg-white border border-emerald-200 text-emerald-700 rounded-lg hover:bg-emerald-50"
+                >
+                  Complete KYC
+                </button>
+                <button
+                  onClick={() => onViewChange('messages')}
+                  className="px-3 py-1.5 text-xs font-medium bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
+                >
+                  Go to Chat
+                </button>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowNotificationSettings(!showNotificationSettings)}
+              className="p-1.5 hover:bg-white rounded-lg transition"
+            >
+              <Settings className="w-4 h-4 text-slate-500" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

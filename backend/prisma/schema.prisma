@@ -1,0 +1,63 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                String   @id @default(cuid())
+  walletAddress     String   @unique
+  email             String?  @unique
+  gmailAccessToken  String?
+  gmailRefreshToken String?
+  createdAt         DateTime @default(now())
+  
+  notifications     Notification[]
+  preferences       EmailPreference?
+  chatSubscriptions ChatSubscription[]
+}
+
+model EmailPreference {
+  id                    String      @id @default(cuid())
+  userId                String      @unique
+  user                  User        @relation(fields: [userId], references: [id])
+  notifyNewInvestment   Boolean     @default(true)
+  notifyVoteCast        Boolean     @default(true)
+  notifyYieldAvailable  Boolean     @default(true)
+  notifyInvestmentActive Boolean    @default(true)
+  emailDigest           String      @default("INSTANT")
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+}
+
+model Notification {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  type        String
+  title       String
+  message     String
+  data        String?
+  isRead      Boolean  @default(false)
+  emailSent   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  
+  @@index([userId, createdAt])
+}
+
+model ChatSubscription {
+  id                  String   @id @default(cuid())
+  userId              String
+  user                User     @relation(fields: [userId], references: [id])
+  daoAddress          String
+  receiveNotifications Boolean  @default(true)
+  lastNotificationAt  DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@unique([userId, daoAddress])
+  @@index([daoAddress])
+}

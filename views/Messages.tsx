@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { Card } from "../components/UI";
-import { ArrowLeft, MessageSquare, Search, Send } from "lucide-react";
+import { ArrowLeft, MessageSquare, Search, Send, Bell, BellOff, Mail, Check } from "lucide-react";
 import { type OnchainDao, fetchActiveDaos } from "../utils/localDaoContracts";
 import { maskAddress } from "../utils/address";
 import {
@@ -16,6 +16,7 @@ import { formatTxError, notifyError, notifySuccess, notifyWarning } from "../uti
 type RoomSummary = {
   lastMessage: DaoChatMessage | null;
   unreadCount: number;
+  isSubscribed?: boolean;
 };
 
 const LAST_SEEN_KEY = "localdao_chat_last_seen_by_room";
@@ -41,6 +42,8 @@ const FRIENDLY_NOUNS = [
   "Stone",
   "Harbor",
 ] as const;
+
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
 
 const toReadableWords = (value: string) =>
   value
@@ -141,6 +144,168 @@ const formatMessageTimestamp = (createdAt: number) => {
   });
 };
 
+// Component for Gmail notification settings
+const GmailNotificationSettings: React.FC<{
+  walletAddress: string;
+  daoAddress: string;
+  daoName: string;
+  onSubscriptionChange?: (isSubscribed: boolean) => void;
+}> = ({ walletAddress, daoAddress, daoName, onSubscriptionChange }) => {
+  const [isConnected, setIsConnected] = useState(false);
+  const [isSubscribed, setIsSubscribed] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+
+  useEffect(() => {
+    if (walletAddress) {
+      checkGmailConnection();
+      checkSubscription();
+    }
+  }, [walletAddress, daoAddress]);
+
+  const checkGmailConnection = async () => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/auth/preferences/${walletAddress}`);
+      const data = await response.json();
+      setIsConnected(!!data.gmailConnected);
+    } catch (error) {
+      console.error("Error checking Gmail connection:", error);
+    }
+  };
+
+  const checkSubscription = async () => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/chat/subscriptions/${walletAddress}`);
+      const subs = await response.json();
+      const daoSub = subs.find((s: any) => s.daoAddress === daoAddress.toLowerCase());
+      setIsSubscribed(daoSub?.receiveNotifications || false);
+      onSubscriptionChange?.(daoSub?.receiveNotifications || false);
+    } catch (error) {
+      console.error("Error checking subscription:", error);
+    }
+  };
+
+  const connectGmail = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/auth/gmail/connect`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ walletAddress })
+      });
+      const { url } = await response.json();
+      window.location.href = url;
+    } catch (error) {
+      console.error("Error connecting Gmail:", error);
+      notifyError("Failed to connect Gmail");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleSubscription = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/chat/subscribe`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          walletAddress,
+          daoAddress,
+          receiveNotifications: !isSubscribed
+        })
+      });
+      
+      if (response.ok) {
+        const newStatus = !isSubscribed;
+        setIsSubscribed(newStatus);
+        onSubscriptionChange?.(newStatus);
+        notifySuccess(newStatus ? "Email notifications enabled for this DAO!" : "Email notifications disabled");
+      } else {
+        const error = await response.json();
+        notifyError(error.error || "Failed to update preferences");
+      }
+    } catch (error) {
+      console.error("Error toggling subscription:", error);
+      notifyError("Failed to update notification preferences");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setShowSettings(!showSettings)}
+        className="p-2 rounded-lg hover:bg-slate-100 transition"
+        title={isSubscribed ? "Email notifications enabled" : "Email notifications disabled"}
+      >
+        {isSubscribed ? (
+          <Bell className="w-4 h-4 text-emerald-600" />
+        ) : (
+          <BellOff className="w-4 h-4 text-slate-400" />
+        )}
+      </button>
+
+      {showSettings && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setShowSettings(false)} />
+          <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-xl border border-slate-200 p-4 z-50">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="font-semibold text-slate-900 flex items-center gap-2">
+                <Mail className="w-4 h-4 text-emerald-600" />
+                Email Notifications
+              </h4>
+              <button onClick={() => setShowSettings(false)} className="text-slate-400 hover:text-slate-600">
+                ✕
+              </button>
+            </div>
+
+            {!isConnected ? (
+              <div className="space-y-3">
+                <p className="text-sm text-slate-600">
+                  Get email notifications when someone messages in {daoName}
+                </p>
+                <button
+                  onClick={connectGmail}
+                  disabled={loading}
+                  className="w-full py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  {loading ? "Connecting..." : "Connect Gmail Account"}
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-slate-700">Receive notifications for {daoName}</span>
+                  <button
+                    onClick={toggleSubscription}
+                    disabled={loading}
+                    className={`px-3 py-1 rounded-full text-sm transition ${
+                      isSubscribed ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"
+                    }`}
+                  >
+                    {isSubscribed ? (
+                      <span className="flex items-center gap-1"><Check className="w-3 h-3" /> Enabled</span>
+                    ) : (
+                      <span className="flex items-center gap-1"><BellOff className="w-3 h-3" /> Disabled</span>
+                    )}
+                  </button>
+                </div>
+                <p className="text-xs text-slate-500">
+                  {isSubscribed 
+                    ? "📧 You'll receive email notifications for new messages"
+                    : "🔕 Click enable to get email notifications"}
+                </p>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
 const MessagesView: React.FC = () => {
   const { user } = usePrivy();
   const { wallets } = useWallets();
@@ -149,6 +314,7 @@ const MessagesView: React.FC = () => {
   const [messages, setMessages] = useState<DaoChatMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [subscriptionStatus, setSubscriptionStatus] = useState<Record<string, boolean>>({});
   const [roomSummaries, setRoomSummaries] = useState<Record<string, RoomSummary>>({});
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -165,6 +331,47 @@ const MessagesView: React.FC = () => {
   const senderLabel = useMemo(() => {
     return resolveSenderLabel(user, walletAddress);
   }, [user, walletAddress]);
+
+  // Function to send notification to backend when message is sent
+  const notifyBackendOfNewMessage = async (message: DaoChatMessage, daoName: string) => {
+    try {
+      console.log("📤 Sending webhook to backend:", {
+        daoAddress: message.daoAddress,
+        daoName: daoName,
+        message: message.content,
+        senderWallet: message.senderWallet,
+        senderName: message.senderLabel
+      });
+      
+      const response = await fetch(`${BACKEND_URL}/api/chat/webhook/new-message`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          daoAddress: message.daoAddress,
+          daoName: daoName,
+          message: message.content,
+          senderWallet: message.senderWallet,
+          senderName: message.senderLabel,
+          timestamp: message.createdAt
+        })
+      });
+      
+      const result = await response.json();
+      console.log(`📧 Webhook result: ${result.notified} emails sent`, result);
+      
+      if (result.notified === 0) {
+        console.log("⚠️ No email sent. Possible reasons:");
+        console.log("   - The sender wallet is the same as the subscriber");
+        console.log("   - No subscribers found for this DAO");
+        console.log("   - Gmail not connected for subscribers");
+      }
+      
+      return result;
+    } catch (error) {
+      console.error("Failed to notify backend:", error);
+      return { success: false, notified: 0 };
+    }
+  };
 
   const loadRoomSummaries = async (daoRows: OnchainDao[]) => {
     if (daoRows.length === 0) {
@@ -188,6 +395,23 @@ const MessagesView: React.FC = () => {
     }
   };
 
+  // Load subscription status for all DAOs
+  const loadSubscriptionStatus = async () => {
+    if (!walletAddress) return;
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/chat/subscriptions/${walletAddress}`);
+      const subs = await response.json();
+      const statusMap: Record<string, boolean> = {};
+      subs.forEach((sub: any) => {
+        statusMap[sub.daoAddress] = sub.receiveNotifications;
+      });
+      setSubscriptionStatus(statusMap);
+      console.log("📋 Subscription status loaded:", statusMap);
+    } catch (error) {
+      console.error("Failed to load subscription status:", error);
+    }
+  };
+
   useEffect(() => {
     const load = async () => {
       setLoading(true);
@@ -196,6 +420,7 @@ const MessagesView: React.FC = () => {
         setDaos(daoRows);
         setSelectedDao((current) => current ?? daoRows[0] ?? null);
         await loadRoomSummaries(daoRows);
+        await loadSubscriptionStatus();
         setError("");
       } catch (err) {
         const message = formatTxError(err, "Failed to load communities.");
@@ -279,20 +504,50 @@ const MessagesView: React.FC = () => {
       }
       if (!draft.trim()) return;
       setSending(true);
+      
+      console.log("📤 Sending message to blockchain from:", walletAddress);
+      console.log("📤 To DAO:", selectedDao.name, selectedDao.address);
+      
+      // Send message to blockchain
       await sendDaoChatMessage({
         daoAddress: selectedDao.address,
         senderWallet: walletAddress,
         senderLabel,
         content: draft,
       });
+      
+      console.log("✅ Message sent to blockchain");
+      
+      // Create message object for backend notification
+      const newMessage = {
+        id: Date.now().toString(),
+        daoAddress: selectedDao.address,
+        content: draft,
+        senderWallet: walletAddress,
+        senderLabel,
+        createdAt: Date.now()
+      } as DaoChatMessage;
+      
+      // 🔥 CRITICAL: Notify backend to send email notifications
+      console.log("📧 Notifying backend to send emails...");
+      const webhookResult = await notifyBackendOfNewMessage(newMessage, selectedDao.name);
+      
+      if (webhookResult.notified > 0) {
+        console.log("✅ Email notification sent successfully!");
+        notifySuccess("Message sent! Email notification delivered.");
+      } else {
+        console.log("⚠️ No email notification sent (you messaged yourself or no subscribers)");
+        notifySuccess("Message sent!");
+      }
+      
       setDraft("");
       const next = await loadDaoChatMessages(selectedDao.address);
       setMessages(next);
       await loadRoomSummaries(daos);
-      notifySuccess("Message sent.");
     } catch (err) {
       const message = formatTxError(err, "Failed to send message.");
       notifyError(message);
+      console.error("Error in handleSend:", err);
     } finally {
       setSending(false);
     }
@@ -304,8 +559,15 @@ const MessagesView: React.FC = () => {
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Community Chat</h1>
           <p className="text-slate-500 mt-1">Real-time rooms, one room per DAO.</p>
+          {walletAddress && (
+            <p className="text-xs text-slate-400 mt-1">
+              Your wallet: {maskAddress(walletAddress)}
+              {subscriptionStatus[selectedDao?.address?.toLowerCase() || ""] && (
+                <span className="ml-2 text-emerald-600">🔔 Email notifications ON</span>
+              )}
+            </p>
+          )}
         </div>
-        {/* <p className="text-xs text-slate-400">Transport: {getDaoChatTransportLabel()}</p> */}
       </div>
 
       {loading ? (
@@ -340,6 +602,7 @@ const MessagesView: React.FC = () => {
                 {filteredDaos.map((dao) => {
                   const summary = roomSummaries[dao.address.toLowerCase()];
                   const isSelected = selectedDao?.address.toLowerCase() === dao.address.toLowerCase();
+                  const isSubscribed = subscriptionStatus[dao.address.toLowerCase()] || false;
                   return (
                     <button
                       key={dao.address}
@@ -355,11 +618,14 @@ const MessagesView: React.FC = () => {
                     >
                       <div className="flex items-start justify-between gap-2">
                         <p className="font-bold text-slate-900 text-sm line-clamp-1">{dao.name}</p>
-                        {summary?.unreadCount ? (
-                          <span className="min-w-5 h-5 px-1 inline-flex items-center justify-center rounded-full bg-emerald-600 text-white text-[10px] font-bold">
-                            {summary.unreadCount > 99 ? "99+" : summary.unreadCount}
-                          </span>
-                        ) : null}
+                        <div className="flex items-center gap-1">
+                          {isSubscribed && <Bell className="w-3 h-3 text-emerald-500" />}
+                          {summary?.unreadCount ? (
+                            <span className="min-w-5 h-5 px-1 inline-flex items-center justify-center rounded-full bg-emerald-600 text-white text-[10px] font-bold">
+                              {summary.unreadCount > 99 ? "99+" : summary.unreadCount}
+                            </span>
+                          ) : null}
+                        </div>
                       </div>
                       <p className="text-[11px] text-slate-500 mt-1">{maskAddress(dao.address)}</p>
                       <div className="mt-2 flex items-center justify-between gap-2">
@@ -395,9 +661,24 @@ const MessagesView: React.FC = () => {
                     <p className="text-xs text-slate-500 truncate">{maskAddress(selectedDao.address)}</p>
                   )}
                 </div>
-                <div className="hidden sm:flex items-center gap-1 text-xs text-slate-500">
-                  <MessageSquare className="w-4 h-4" />
-                  {roomMessages.length}
+                <div className="flex items-center gap-2">
+                  <div className="hidden sm:flex items-center gap-1 text-xs text-slate-500">
+                    <MessageSquare className="w-4 h-4" />
+                    {roomMessages.length}
+                  </div>
+                  {walletAddress && selectedDao && (
+                    <GmailNotificationSettings
+                      walletAddress={walletAddress}
+                      daoAddress={selectedDao.address}
+                      daoName={selectedDao.name}
+                      onSubscriptionChange={(isSubscribed) => {
+                        setSubscriptionStatus(prev => ({
+                          ...prev,
+                          [selectedDao.address.toLowerCase()]: isSubscribed
+                        }));
+                      }}
+                    />
+                  )}
                 </div>
               </div>
 
