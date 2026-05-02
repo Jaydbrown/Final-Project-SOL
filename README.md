@@ -1,893 +1,315 @@
-# Final-Project-SOL
+# Final-Project-SOL (LocalDAO)
 
-Final-Project-SOL is a neighborhood investment platform built with React, Vite, Privy, Viem, and Solidity smart contracts.
+Neighborhood investment platform where local communities create DAOs, verify members, propose investments, vote with USDC stakes, and distribute yield on-chain—with a React/Vite frontend, optional Node backend for chat email notifications, and Solidity contracts (Foundry).
 
-The project allows local communities to create DAOs, add verified members, propose local investment projects, vote on those projects, lock funds, manage project status, and distribute yield transparently on-chain.
+---
 
-## Project Goal
+## Table of contents
 
-The main goal of this project is to help local communities pool money and make investment decisions together.
+1. [Overview](#overview)
+2. [Architecture](#architecture)
+3. [Features](#features)
+4. [Tech stack](#tech-stack)
+5. [Repository layout](#repository-layout)
+6. [Environment variables](#environment-variables)
+7. [Local development](#local-development)
+8. [Backend API & workers](#backend-api--workers)
+9. [DAO chat (Messages)](#dao-chat-messages)
+10. [Smart contracts](#smart-contracts)
+11. [Deployment notes](#deployment-notes)
+12. [Troubleshooting](#troubleshooting)
 
-A community can create a DAO for a real location, add members after KYC checks, create investment proposals, allow verified members to vote, and distribute returns when an investment generates profit.
+---
 
-HOW IT WORKS:
+## Overview
 
-1. A founder creates a local DAO.
-2. Admins add and verify members.
-3. Admins create investment proposals.
-4. Verified members vote on proposals.
-5. Yes votes can stake USDC.
-6. Approved investments can be activated.
-7. Finance managers or admins distribute yield.
-8. Members who supported a successful investment can claim their share.
+**Goal:** Help communities pool capital and decide on local investments together.
 
-## Main Features
+**On-chain flow (high level):**
 
-### Frontend Features
+1. Founder creates a DAO via **LocalDAOFactory**.
+2. Admins add members and verify **KYC** (hash-based on-chain).
+3. Admins create **investment proposals**.
+4. Verified members **vote** (upvotes stake USDC; downvotes are free).
+5. Eligible proposals are **activated**; funds and status follow **LocalDAO** rules.
+6. Yield is **deposited** and **claimed** (or stake withdrawn per rules).
 
-- Landing page for unauthenticated users.
-- Privy authentication and embedded wallet support.
-- Dashboard showing active DAOs, total TVL, yield, and proposals.
-- DAO creation flow with location, membership, governance, and logo upload steps.
-- IPFS image upload through Pinata.
-- DAO discovery page.
-- Investment proposal listing and filtering.
-- Proposal creation for founders and admins.
-- Voting interface for verified members.
-- KYC and admin management screen.
-- Wallet screen showing connected wallet and portfolio data.
-- Yield screen for claiming yield, distributing yield, and withdrawing eligible stake.
-- Toast notifications for success, warning, and error messages.
+**Off-chain additions in this repo:** profile avatars (IPFS + local storage), per-DAO **chat** (Supabase or browser fallback), **email alerts** via Gmail and an optional **RabbitMQ** worker pipeline, and **in-app notification** hints (bell + proposals/yields).
 
-### Smart Contract Features
+---
 
-- Factory contract for deploying LocalDAO clones.
-- LocalDAO contract for each community.
-- Member management with KYC verification.
-- Founder, admin, and finance manager roles.
-- Investment proposal creation.
-- USDC-backed voting.
-- Free downvotes and staked upvotes.
-- Investment activation and status management.
-- Escrow tracking for locked project funds.
-- Phased fund release.
-- Yield deposits and yield claiming.
-- Unclaimed yield recovery after a grace period.
-- Pause and unpause controls.
-- Activity timeline events.
+## Architecture
 
-## Tech Stack
+```text
+┌─────────────────────────────────────────────────────────────────┐
+│                        Browser (Vite SPA)                        │
+│  Privy auth · Viem reads/writes · IPFS (Pinata) · optional chat  │
+└───────────────┬───────────────────────────────┬─────────────────┘
+                │ RPC                            │ HTTP
+                ▼                                ▼
+┌───────────────────────┐            ┌──────────────────────────────┐
+│   EVM chain (e.g.     │            │  Express API (backend/)     │
+│   Lisk Sepolia)       │            │  Prisma (SQLite) · Gmail    │
+│   Factory + DAOs      │            │  Optional RabbitMQ workers  │
+└───────────────────────┘            └──────────────────────────────┘
+                │                                │
+                │                                ▼
+                │                      ┌──────────────────┐
+                │                      │ Supabase (opt.)  │
+                │                      │ dao_chat_messages│
+                └──────────────────────┴──────────────────┘
+```
 
-### Frontend
+- **Frontend** talks to the chain through **Viem** and to **your backend** with `VITE_BACKEND_URL` (see `utils/backendUrl.ts`).
+- **Chat persistence:** if `VITE_SUPABASE_URL` and key are set, messages go to Supabase; otherwise they use **localStorage** for that browser (good for demos, not multi-device sync).
+- **Backend** is optional for core on-chain flows but **recommended** for Gmail-linked **chat email notifications** and queued delivery.
 
-- React 19
-- TypeScript
-- Vite
-- React Router
-- Tailwind CSS
-- Privy authentication
-- Viem
-- Ethers
-- Lucide React icons
-- React Toastify
+---
 
-### Smart Contracts
+## Features
 
-- Solidity 0.8.20
-- Foundry
-- OpenZeppelin Contracts
-- Forge Standard Library
-- EIP-1167 minimal proxy clones
+### On-chain (UI + contracts)
 
-### External Services
+- **Landing** and **Privy** login (embedded / linked Ethereum wallet).
+- **Dashboard:** TVL, yields, active DAOs, proposals needing attention.
+- **Create DAO:** metadata, location, governance, membership, **logo upload (IPFS / Pinata)**.
+- **Discover** and **Neighborhoods (investments):** list/filter proposals; create proposals (founder/admin).
+- **Voting:** verified members only; staked upvotes; deadline-aware.
+- **KYC / Admin:** members, roles, activate/close investments, yield ops, pause, etc.
+- **Wallet** and **Yields:** balances, claim, deposit yield, withdraw stake where allowed.
+- **Contract helpers:** `utils/localDaoContracts.ts`, chain config in `utils/contract.ts`.
 
-- Privy for authentication and embedded wallets.
-- Pinata for IPFS file uploads.
-- Block explorer links from the configured explorer URL.
-- Optional Supabase utilities for waitlist and DAO chat features.
+### Messaging & notifications
 
-## Project Structure
+- **Messages** view: one room per active DAO; realtime updates (Supabase Realtime websocket or `BroadcastChannel` + `storage` fallback).
+- **Chat images:** uploads go to **Pinata**; message row can store `attachment_url` in Supabase. If that column is missing, the app **falls back** to storing the gateway URL in `content` and **hydrates** it on read so the UI still renders an **image**, not raw link text.
+- **Notification bell (AppShell):** combines **unread chat** (from others, vs. your “last seen” map in `localStorage`), **open proposals**, and **claimable yields**; opens the right screen (Messages can jump to a DAO via `MESSAGES_NAV_DAO_STORAGE_KEY`).
+- **Email:** users can connect **Gmail** and subscribe per DAO; new message webhook fans out jobs (sync or RabbitMQ).
+
+### Profile & identity
+
+- **Profile photo:** uploaded to IPFS; **URL stored per wallet** in `localStorage` (`utils/profileAvatar.ts`); shown in **sidebar**, **header**, and as **avatars next to chat bubbles** (your photo + others if this device has saved their URL).
+- **Display names:** Gmail / Google / other OAuth names via `utils/userDisplay.ts`; wallet shown **masked** in the shell.
+
+### Backend services
+
+- **Express 5** REST API (`backend/src/index.ts`).
+- **Prisma + SQLite** by default (`User`, `Notification`, `EmailPreference`, `ChatSubscription`).
+- **Gmail OAuth** for inbox linking; **nodemailer** paths for outbound alerts.
+- **RabbitMQ** (optional): webhook publishes jobs; **workers** consume chat dispatch + email delivery with retries / DLQ-style handling (see `backend/src/messaging/` and `docker-compose.rabbitmq.yml`).
+
+---
+
+## Tech stack
+
+| Area | Technologies |
+|------|----------------|
+| Frontend | React 19, TypeScript, Vite 6, Tailwind 4, Privy, Viem, Ethers (where used), Lucide, React Toastify |
+| Backend | Node, Express 5, Prisma, SQLite, Google APIs / Nodemailer, amqplib, Viem |
+| Contracts | Solidity 0.8.20, Foundry, OpenZeppelin, EIP-1167 clones |
+| Storage / infra | Pinata (IPFS), optional Supabase (Postgres API + Realtime) |
+
+---
+
+## Repository layout
 
 ```text
 .
 ├── App.tsx
 ├── index.tsx
-├── index.html
-├── package.json
 ├── vite.config.ts
-├── tsconfig.json
-├── .env.example
+├── tsconfig.json              # Frontend-only TS project (backend excluded)
+├── vite-env.d.ts              # VITE_* typings for TypeScript
+├── .env.example               # Root env template (do not commit real secrets)
 ├── components/
-├── layouts/
-├── views/
-├── utils/
-├── public/
-└── contract/
-    ├── src/
-    ├── test/
-    ├── script/
-    ├── lib/
-    └── foundry.toml
+├── layouts/                   # AppShell: nav, notifications, profile chip
+├── views/                     # Dashboard, Messages, Profile, Yields, etc.
+├── utils/                     # contract, daoChat, ipfs, userDisplay, profileAvatar, …
+├── supabase-scripts/          # e.g. add-chat-attachment_url.sql
+├── backend/
+│   ├── package.json
+│   ├── prisma/schema.prisma
+│   ├── docker-compose.rabbitmq.yml
+│   └── src/
+│       ├── index.ts
+│       ├── worker.bootstrap.ts
+│       ├── routes/            # auth, chat
+│       ├── services/          # gmail, chat-notification.processor, …
+│       ├── messaging/         # RabbitMQ topology, publishers, consumers
+│       └── db/prisma.ts
+├── contract/                  # Foundry project (src, test, script)
+└── public/
 ```
 
-### Important Root Files
+---
 
-- `App.tsx`: Controls the main app state and decides which view to show.
-- `index.tsx`: Starts the React app and configures Privy.
-- `vite.config.ts`: Vite configuration, local server settings, and aliases.
-- `.env.example`: Example environment variables.
-- `package.json`: Frontend scripts and dependencies.
-- `public/whitepaper.html`: Static whitepaper page.
+## Environment variables
 
-### Important Folders
+Create **`/.env`** from **`.env.example`**. Treat **secrets** as sensitive: use placeholders in `.env.example` in git and real values only locally or in your host’s secret store.
 
-- `components/`: Reusable UI and landing page sections.
-- `layouts/`: Shared app layout, including the authenticated app shell.
-- `views/`: Main pages such as dashboard, DAO creation, voting, wallet, yields, and KYC/admin tools.
-- `utils/`: Contract helpers, chain settings, IPFS upload, address formatting, explorer links, notifications, and other helper logic.
-- `contract/`: Solidity smart contracts, tests, deployment scripts, and Foundry configuration.
+### Frontend (`/.env`)
 
-## Frontend Views
+| Variable | Purpose |
+|---------|---------|
+| `VITE_PRIVY_APP_ID` | **Required.** Privy application ID. |
+| `VITE_CHAIN_ID`, `VITE_CHAIN_NAME`, `VITE_RPC_URL`, `VITE_EXPLORER_URL` | Chain + explorer (defaults exist in `utils/contract.ts` if unset). |
+| `VITE_EXPLORER_URLS`, `VITE_FUJI_EXPLORER_URLS` | Optional multi-explorer CSV for `utils/explorer.ts`. |
+| `VITE_FACTORY_ADDRESS`, `VITE_USDC_ADDRESS` | Deployed factory and USDC (or mock) on target chain. |
+| `VITE_BACKEND_URL` | API origin for chat webhooks & prefs (default `http://localhost:3001` in code if unset). |
+| `VITE_PINATA_JWT` | **Logo, profile photo, chat image** uploads via Pinata. |
+| `VITE_IPFS_UPLOAD_TIMEOUT_MS` | Optional upload timeout (ms). |
+| `VITE_SUPABASE_URL` | Optional; enables hosted chat sync + Realtime. |
+| `VITE_SUPABASE_ANON_KEY` or `VITE_SUPABASE_PUBLISHABLE_KEY` | Supabase client key (`daoChat.ts` accepts either). |
 
-### Landing Page
+### Backend (`/backend/.env`)
 
-The landing page is shown before a user logs in. It introduces the platform and calls Privy login when the user chooses to enter the app.
+Copy from **`backend/.env.example`**:
 
-Main file:
+| Variable | Purpose |
+|---------|---------|
+| `DATABASE_URL` | Prisma datasource (default SQLite file path). |
+| `PORT` | API port (default `3001`). |
+| `FRONTEND_URL` | CORS / email link base. |
+| `GMAIL_*` | OAuth client + redirect; **mailer** refresh token or app password for sending. |
+| `RABBITMQ_URL` | If set, chat webhook queues jobs; run **`npm run worker`**. |
+| `RABBITMQ_HEARTBEAT`, `RABBIT_PREFETCH`, `RABBIT_MAX_JOB_ATTEMPTS` | Tuning for consumers. |
 
-```text
-views/LandingPage.tsx
-```
+---
 
-### Dashboard
+## Local development
 
-The dashboard is shown after login. It loads on-chain DAO data, proposal data, and yield data.
-
-It shows:
-
-- Total value locked.
-- Total yield generated.
-- Number of active DAOs.
-- Active DAO list.
-- Proposals that need votes.
-
-Main file:
-
-```text
-views/Dashboard.tsx
-```
-
-### Create DAO
-
-This page guides a founder through creating a new local DAO.
-
-The form collects:
-
-- DAO name.
-- Location.
-- Description.
-- Coordinates.
-- Postal code.
-- Investment focus.
-- Governance settings.
-- Membership settings.
-- Optional DAO logo.
-
-The DAO is created by calling the `LocalDAOFactory` smart contract.
-
-Main file:
-
-```text
-views/CreateDAO.tsx
-```
-
-### Discover
-
-This page is used to browse available DAOs.
-
-Main file:
-
-```text
-views/Discover.tsx
-```
-
-### Investment Listing
-
-This page lists investment opportunities across DAOs.
-
-Users can filter investments by status:
-
-- All
-- Proposed
-- Active
-- Incomplete
-- Completed
-
-Founders and admins can create new proposals from this page.
-
-Main file:
-
-```text
-views/InvestmentListing.tsx
-```
-
-### Voting Interface
-
-This page lets verified DAO members vote on investment proposals.
-
-Voting rules:
-
-- Yes votes require a USDC stake.
-- No votes are free.
-- Only verified members can vote.
-- Voting must happen before the proposal deadline.
-
-Main file:
-
-```text
-views/VotingInterface.tsx
-```
-
-### KYC and Admin Management
-
-This page is used by founders and admins to manage DAO members and permissions.
-
-Supported actions include:
-
-- Add member.
-- Verify member KYC.
-- Remove member.
-- Add admin.
-- Remove admin.
-- Add finance manager.
-- Remove finance manager.
-- Activate investment.
-- Mark investment incomplete.
-- Close investment.
-- Sweep unclaimed yield.
-- Pause DAO.
-- Unpause DAO.
-
-Main file:
-
-```text
-views/KYCVerification.tsx
-```
-
-### Wallet
-
-This page shows wallet-related data for the connected user.
-
-It displays:
-
-- Current connected wallet.
-- Current chain name.
-- DAO treasury snapshot.
-- Total TVL.
-- Claimable yield.
-
-Main file:
-
-```text
-views/Wallet.tsx
-```
-
-### Yields
-
-This page shows yield information.
-
-Members can:
-
-- View generated yield.
-- Claim available yield.
-- Withdraw eligible stake.
-
-Finance managers, admins, and founders can:
-
-- Deposit yield for investments.
-- Attach an expense report CID.
-
-Main file:
-
-```text
-views/Yields.tsx
-```
-
-# Smart Contract Overview
-
-The smart contracts are inside the `contract/` folder.
-
-### LocalDAOFactory
-
-File:
-
-```text
-contract/src/LocalDAOFactory.sol
-```
-
-The factory deploys new DAO instances.
-
-It uses OpenZeppelin's `Clones` library to create EIP-1167 minimal proxy clones. This is cheaper than deploying a full new contract every time.
-
-Main responsibilities:
-
-- Store the LocalDAO implementation address.
-- Deploy new DAO clones.
-- Initialize each clone.
-- Track all DAO addresses.
-- Track active DAOs.
-- Store basic DAO metadata.
-- Allow the factory owner to deactivate a DAO.
-
-Important functions:
-
-- `createDAO(...)`
-- `getAllDAOs()`
-- `getActiveDAOs()`
-- `isValidDAO(...)`
-- `getDAOMetadata(...)`
-- `deactivateDAO(...)`
-
-### LocalDAO
-
-File:
-
-```text
-contract/src/LocalDAO.sol
-```
-
-This is the main DAO contract.
-
-Each DAO clone has its own:
-
-- Name.
-- Description.
-- Location.
-- Coordinates.
-- Postal code.
-- Member list.
-- Admin list.
-- Finance manager list.
-- Investment proposals.
-- Votes.
-- USDC treasury data.
-- Yield distribution records.
-
-Important functions include:
-
-- `initialize(...)`
-- `addMember(...)`
-- `verifyMemberKYC(...)`
-- `removeMember(...)`
-- `exitDAO()`
-- `createInvestment(...)`
-- `vote(...)`
-- `activateInvestment(...)`
-- `markInvestmentIncomplete(...)`
-- `extendDeadline(...)`
-- `releaseNextPhase(...)`
-- `withdrawStake(...)`
-- `depositYield(...)`
-- `claimYield(...)`
-- `closeInvestment(...)`
-- `sweepUnclaimedYield(...)`
-- `addAdmin(...)`
-- `removeAdmin(...)`
-- `addFinanceManager(...)`
-- `removeFinanceManager(...)`
-- `updateDAOInfo(...)`
-- `pause()`
-- `unpause()`
-
-### Libraries
-
-The contract uses helper libraries in:
-
-```text
-contract/src/libraries/
-```
-
-Current libraries:
-
-- `InvestmentManager.sol`
-- `YieldCalculator.sol`
-- `StringUtils.sol`
-
-These keep some investment, yield, and string logic separate from the main contract.
-
-### Interface
-
-The shared contract interface is:
-
-```text
-contract/src/interfaces/ILocalDAO.sol
-```
-
-This defines shared enums, structs, and function signatures used by the DAO contract.
-
-## Contract Roles
-
-### Creator
-
-The creator is the wallet that creates the DAO.
-
-The creator can:
-
-- Add and remove admins.
-- Add and remove finance managers.
-- Pause and unpause the DAO.
-- Perform admin-level actions.
-
-### Admin
-
-Admins help manage the DAO.
-
-Admins can:
-
-- Add members.
-- Verify KYC.
-- Remove members.
-- Create investment proposals.
-- Activate eligible investments.
-- Manage project statuses.
-
-### Finance Manager
-
-Finance managers help manage investment funds and returns.
-
-Finance managers can:
-
-- Deposit yield.
-- Help manage investment financial actions.
-
-### Verified Member
-
-Verified members are DAO members whose KYC has been approved.
-
-Verified members can:
-
-- Vote on proposals.
-- Stake USDC on yes votes.
-- Claim yield from successful investments they supported.
-- Withdraw eligible stake when allowed.
-
-## Environment Variables
-
-Create a local environment file from the example:
+### Frontend
 
 ```bash
+npm install
+cp .env.example .env   # then edit
+npm run dev              # http://localhost:3000 (see vite.config.ts)
+npm run build
+npm run preview
+```
+
+Typecheck the **frontend-only** TS project:
+
+```bash
+npx tsc --noEmit
+```
+
+### Backend
+
+```bash
+cd backend
+npm install
 cp .env.example .env
+npx prisma generate
+npx prisma migrate dev    # creates/updates SQLite schema if configured
+npm run dev               # API
 ```
 
-Then fill in the needed values.
-
-### Required for Login
-
-```text
-VITE_PRIVY_APP_ID=
-```
-
-This is required. Without it, the frontend will show a missing Privy App ID message.
-
-### Chain Configuration
-
-```text
-VITE_CHAIN_ID=
-VITE_CHAIN_NAME=
-VITE_RPC_URL=
-VITE_EXPLORER_URL=
-VITE_EXPLORER_URLS=
-```
-
-If these are not set, the app uses defaults from `utils/contract.ts`.
-
-Current defaults in the frontend:
-
-```text
-Chain ID: 4202
-Chain Name: Lisk Sepolia
-RPC URL: https://rpc.sepolia-api.lisk.com
-Explorer URL: https://sepolia-blockscout.lisk.com
-```
-
-### Contract Addresses
-
-```text
-VITE_FACTORY_ADDRESS=
-VITE_USDC_ADDRESS=
-```
-
-`VITE_FACTORY_ADDRESS` should point to the deployed `LocalDAOFactory`.
-
-`VITE_USDC_ADDRESS` should point to the USDC token contract or a mock USDC token on your target network.
-
-### IPFS Uploads
-
-```text
-VITE_PINATA_JWT=
-VITE_IPFS_UPLOAD_TIMEOUT_MS=
-```
-
-`VITE_PINATA_JWT` is needed for DAO logo uploads through Pinata.
-
-`VITE_IPFS_UPLOAD_TIMEOUT_MS` is optional. If it is not set, the app uses 60000 milliseconds.
-
-### Optional Supabase Variables
-
-Some helper files contain optional Supabase support:
-
-```text
-VITE_SUPABASE_URL=
-VITE_SUPABASE_ANON_KEY=
-VITE_SUPABASE_PUBLISHABLE_KEY=
-```
-
-These are not required for the main contract workflow unless you are using the waitlist or DAO chat utilities.
-
-### Optional App URL
-
-```text
-VITE_APP_BASE_URL=
-```
-
-This can be used by the landing page when building share or navigation links.
-
-### Optional Gemini Variable
-
-```text
-GEMINI_API_KEY=
-```
-
-The Vite config exposes this as `process.env.API_KEY` and `process.env.GEMINI_API_KEY`.
-
-## Installation
-
-Install frontend dependencies:
+Optional **RabbitMQ** (Docker):
 
 ```bash
-npm install
+cd backend
+docker compose -f docker-compose.rabbitmq.yml up -d
+# set RABBITMQ_URL=amqp://guest:guest@localhost:5672 in backend/.env
+npm run worker            # separate terminal — or npm run dev:worker
 ```
 
-The repository also contains a `yarn.lock`, so Yarn can also be used if your team prefers it:
+### Health check
 
-```bash
-yarn install
-```
+`GET http://localhost:3001/api/health` — reports Gmail outbound config and RabbitMQ reachability snapshot.
 
-Use one package manager consistently to avoid lockfile conflicts.
+---
 
-## Running the Frontend
+## Backend API & workers
 
-Start the development server:
+**Mounted routes:**
 
-```bash
-npm run dev
-```
+- **`/api/auth`** — Gmail connect/callback/preferences (see `routes/auth.routes.ts`).
+- **`/api/chat`** — subscribe, list subscriptions by wallet, **webhook** `POST /api/chat/webhook/new-message` (fan-out notifications + optional queue).
 
-The Vite server is configured to run on:
+**Webhook behavior:**
 
-```text
-http://localhost:3000
-```
+1. Validates payload (`daoAddress`, optional `daoName`, message preview, sender, timestamp).
+2. If **`RABBITMQ_URL`** is configured and publish succeeds → **HTTP 202** and workers process persisted notifications + email jobs.
+3. Else → synchronous pipeline in `chat-notification.processor.ts` (in-app notification rows + SMTP when configured).
 
-Build the app:
+Workers: `backend/src/worker.bootstrap.ts` (consumers under `messaging/consumers/`).
 
-```bash
-npm run build
-```
+---
 
-Preview the production build:
+## DAO chat (Messages)
 
-```bash
-npm run preview
-```
+- **Transport label:** `getDaoChatTransportLabel()` → `supabase-realtime` vs `local-fallback`.
+- **Supabase table:** `dao_chat_messages` — columns include `room_key`, `sender_wallet`, `sender_label`, `content`, `created_at`, and **`attachment_url`** if you ran:
 
-## Running Smart Contract Commands
+  `supabase-scripts/add-chat-attachment-url.sql`
 
-Move into the contract folder:
+- **Without `attachment_url`:** inserts still succeed (URL merged into `content`); **`hydrateChatImageAttachment`** in `utils/daoChat.ts` restores `attachmentUrl` for images in the UI.
+- **Loads:** REST select tries `attachment_url` first and **retries** without that column if PostgREST errors (so older DBs don’t break message loading).
 
-```bash
-cd contract
-```
+---
 
-Build contracts:
+## Smart contracts
 
-```bash
-forge build
-```
-
-Run tests:
-
-```bash
-forge test
-```
-
-Format Solidity files:
-
-```bash
-forge fmt
-```
-
-## Deploying Contracts
-
-The deployment script is:
-
-```text
-contract/script/DeployLocalDAO.s.sol
-```
-
-The script deploys:
-
-1. A `LocalDAO` implementation contract.
-2. A `LocalDAOFactory` contract.
-3. One initial DAO for testing.
-
-Before deploying, set your private key:
-
-```bash
-export PRIVATE_KEY=your_private_key_here
-```
-
-Run the deployment script from the `contract` folder:
-
-```bash
-forge script script/DeployLocalDAO.s.sol:DeployLocalDAO --rpc-url <your_rpc_url> --broadcast
-```
-
-After deployment:
-
-1. Copy the deployed factory address.
-2. Add it to `.env` as `VITE_FACTORY_ADDRESS`.
-3. Add your stablecoin address as `VITE_USDC_ADDRESS`.
-4. Restart the frontend dev server.
-
-## Main User Flow
-
-### 1. User Logs In
-
-The user signs in through Privy. If the user does not already have a wallet, Privy can create embedded Ethereum and Solana wallets.
-
-### 2. Founder Creates DAO
-
-The founder fills in DAO details and submits a transaction to the factory contract.
-
-The factory deploys a new LocalDAO clone and initializes it with the founder as creator.
-
-### 3. Admin Adds Members
-
-The founder or admin adds member wallet addresses and stores a KYC proof hash.
-
-### 4. Admin Verifies KYC
-
-The founder or admin marks a member as KYC verified.
-
-Only verified members can vote.
-
-### 5. Admin Creates Investment Proposal
-
-An admin creates an investment proposal with:
-
-- Name.
-- Category.
-- Funding amount.
-- Expected yield.
-- Grade.
-- Deadline.
-- Document CIDs.
-
-### 6. Members Vote
-
-Verified members vote yes or no.
-
-Yes votes stake USDC and can receive yield later.
-
-No votes do not stake USDC and do not receive yield.
-
-### 7. Admin Activates Investment
-
-If the investment meets the contract rules, an admin can activate it.
-
-### 8. Finance Manager Deposits Yield
-
-When the investment generates returns, a finance manager, admin, or creator deposits yield into the DAO contract.
-
-### 9. Members Claim Yield
-
-Members who supported the investment can claim their share of the yield.
-
-## Frontend and Contract Connection
-
-The main frontend contract helper is:
-
-```text
-utils/localDaoContracts.ts
-```
-
-This file:
-
-- Creates public and wallet clients.
-- Reads active DAOs from the factory.
-- Reads investments from DAO contracts.
-- Creates DAO transactions.
-- Creates investment transactions.
-- Sends votes.
-- Handles yield deposits and claims.
-- Handles member and role management.
-- Formats USDC values.
-- Converts errors into useful frontend behavior.
-
-The chain settings and factory ABI are in:
-
-```text
-utils/contract.ts
-```
-
-## Data Storage
-
-### On-Chain Data
-
-The following data is stored on-chain:
-
-- DAO metadata.
-- Members.
-- KYC verification status.
-- Admin and finance manager roles.
-- Investments.
-- Votes.
-- Staked amounts.
-- Yield distribution data.
-- Timeline events.
-
-### Off-Chain Data
-
-The following data is stored off-chain:
-
-- Uploaded images on IPFS.
-- KYC documents or references.
-- Optional waitlist or chat data if Supabase is used.
-
-The contract stores hashes or CIDs where needed instead of storing private documents directly.
-
-## Testing
-
-Frontend build test:
-
-```bash
-npm run build
-```
-
-Contract tests:
-
-```bash
-cd contract
-forge test
-```
-
-## Common Problems
-
-### Missing Privy App ID
-
-Problem:
-
-```text
-Missing Privy App ID
-```
-
-Fix:
-
-Set `VITE_PRIVY_APP_ID` in `.env` and restart the dev server.
-
-### Wrong Network
-
-Problem:
-
-The wallet refuses transactions or says the chain is unsupported.
-
-Fix:
-
-Check that the wallet network matches:
-
-- `VITE_CHAIN_ID`
-- `VITE_CHAIN_NAME`
-- `VITE_RPC_URL`
-- The network where the factory was deployed
-
-### DAO Creation Fails
-
-Possible causes:
-
-- Wallet rejected the transaction.
-- Wallet does not have enough native token for gas.
-- `VITE_FACTORY_ADDRESS` is wrong.
-- `VITE_USDC_ADDRESS` is empty or invalid.
-- Wallet is connected to the wrong network.
-
-### IPFS Upload Fails
-
-Possible causes:
-
-- `VITE_PINATA_JWT` is missing.
-- Pinata key does not have the right permissions.
-- Network request timed out.
-- Browser or hosting environment blocked the request.
-
-### Contract Reads Return Empty Data
-
-Possible causes:
-
-- Factory address points to a network with no DAOs.
-- RPC URL is wrong.
-- App is connected to a different chain than the deployed contracts.
-- The DAO was deployed but marked inactive.
-
-
-
-## Useful Commands
-
-Install dependencies:
-
-```bash
-npm install
-```
-
-Run frontend:
-
-```bash
-npm run dev
-```
-
-Build frontend:
-
-```bash
-npm run build
-```
-
-Preview frontend build:
-
-```bash
-npm run preview
-```
-
-Build contracts:
+Located under **`contract/`**.
 
 ```bash
 cd contract
 forge build
-```
-
-Run contract tests:
-
-```bash
-cd contract
 forge test
-```
-
-Format contracts:
-
-```bash
-cd contract
 forge fmt
 ```
 
-Deploy contracts:
+Deploy (after `PRIVATE_KEY` and RPC):
 
 ```bash
-cd contract
-forge script script/DeployLocalDAO.s.sol:DeployLocalDAO --rpc-url <your_rpc_url> --broadcast
+forge script script/DeployLocalDAO.s.sol:DeployLocalDAO --rpc-url <RPC_URL> --broadcast
 ```
 
-## Current Limitations
+Then set **`VITE_FACTORY_ADDRESS`** and **`VITE_USDC_ADDRESS`** in the frontend `.env`.
 
-- The frontend network defaults and some UI messages are not fully aligned.
-- The deploy script contains a placeholder stable token address.
-- Pinata is required for image uploads unless the upload flow is changed.
-- KYC verification is represented by hashes and admin actions; the real document review process happens off-chain.
-- The app depends on correct deployed contract addresses in the environment.
+See **LocalDAOFactory** / **LocalDAO** sections in the earlier part of this README for responsibilities and main functions (unchanged contract design).
 
-## 
+---
 
-Final-Project-SOL is a full-stack Web3 application for community-owned local investment.
+## Deployment notes
 
-The frontend provides the user experience for creating communities, managing members, voting, and claiming yield. The Solidity contracts enforce the rules for membership, voting, treasury accounting, investment status, and yield distribution.
+- **Frontend:** static build from `npm run build`; configure all `VITE_*` on the host (Vercel, Netlify, etc.). `VITE_BACKEND_URL` must point to your **production API** over HTTPS when the site is HTTPS.
+- **Backend:** run `npm run build && npm run start`; set `FRONTEND_URL`, DB URL, Gmail, and optionally `RABBITMQ_URL`; run **`start:worker`** as a separate process if using the queue.
+- **Supabase:** enable RLS policies appropriate for your threat model; the app uses the **anon** key from the browser for chat—tighten policies and consider a server proxy for production hardening.
+- **Never commit** live Privy secrets, Pinata JWTs, or Supabase service keys to git.
 
-The most important setup step is making sure the frontend environment variables match the network and contract addresses where the smart contracts are deployed.
+---
+
+## Troubleshooting
+
+| Symptom | Things to check |
+|--------|------------------|
+| “Missing Privy App ID” | `VITE_PRIVY_APP_ID` in `.env`; restart dev server. |
+| Transactions fail / wrong chain | Wallet network vs `VITE_CHAIN_ID` / RPC; factory & USDC on same chain. |
+| Chat fails to load | Supabase URL/key; REST errors; run attachment SQL migration; browser console + Network tab on `/rest/v1/dao_chat_messages`. |
+| Chat shows URL not image | Old rows: hydration should fix on read; ensure Pinata gateway URL pattern is https and contains `/ipfs/` or recognized host. |
+| No emails on new message | Subscriptions + user `email`; Gmail tokens / `GMAIL_FROM_EMAIL`; workers if queued; **`/api/health`**. |
+| Workers idle | `RABBITMQ_URL`; Docker compose running; **`npm run worker`** started. |
+| TypeScript OOM | Root `tsconfig` excludes **`backend`**; run backend `tsc` inside **`backend/`**. |
+
+---
+
+## Useful commands (quick reference)
+
+```bash
+npm install && npm run dev          # Frontend
+npm run build && npm run preview    # Frontend production preview
+npx tsc --noEmit                    # Frontend TS check
+
+cd backend && npm install && npm run dev
+cd backend && npm run worker
+
+cd contract && forge build && forge test
+```
+
+---
+
+## License / attribution
+
+Project structure and contracts follow the Neighborhood / LocalDAO product goals described above; adjust **LICENSE** if you add one. For production use, complete a security review of contracts, secrets handling, and Supabase policies.

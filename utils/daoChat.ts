@@ -62,6 +62,71 @@ const supabaseHeaders = () => ({
 const hasAttachment = (msg: DaoChatMessage) =>
   typeof msg.attachmentUrl === "string" && Boolean(msg.attachmentUrl.trim());
 
+/** True for Pinata/ipfs gateways and URLs that look like direct image blobs. */
+function looksLikeRenderableImageUrl(s: string): boolean {
+  const u = s.trim();
+  if (!u.startsWith("https://") && !u.startsWith("http://")) return false;
+  if (/\.(?:png|jpe?g|gif|webp)(?:\?[^\s]*)?$/i.test(u)) return true;
+  if (/\/ipfs\/[a-zA-Z0-9]+/i.test(u)) return true;
+  if (/pinata\.cloud\/ipfs\//i.test(u)) return true;
+  if (/\.mypinata\.cloud\//i.test(u)) return true;
+  if (/cloudflare-ipfs\.com\/ipfs\//i.test(u)) return true;
+  return false;
+}
+
+function stripUrlFromCaption(content: string, url: string): string {
+  const u = url.trim();
+  let c = (content ?? "").trim();
+  if (!u) return c;
+  if (c === u) return "";
+  if (c.endsWith(`\n\n${u}`)) return c.slice(0, -(u.length + 2)).trim();
+  if (c.endsWith(`\n${u}`)) return c.slice(0, -(u.length + 1)).trim();
+  const parts = c.split(/\n\s*\n/);
+  if (parts.length >= 2 && parts[parts.length - 1]?.trim() === u) {
+    return parts.slice(0, -1).join("\n\n").trim();
+  }
+  return c;
+}
+
+/**
+ * When Supabase has no `attachment_url` column, sends store the gateway URL inside `content`.
+ * Split that into attachmentUrl so the UI shows an image, not raw link text.
+ */
+function hydrateChatImageAttachment(msg: DaoChatMessage): DaoChatMessage {
+  const existing = msg.attachmentUrl?.trim();
+  if (existing && looksLikeRenderableImageUrl(existing)) {
+    const stripped = stripUrlFromCaption(msg.content, existing);
+    return { ...msg, attachmentUrl: existing, content: stripped };
+  }
+
+  const body = (msg.content ?? "").trim();
+  if (!body) return msg;
+
+  if (looksLikeRenderableImageUrl(body)) {
+    return { ...msg, content: "", attachmentUrl: body };
+  }
+
+  const idx = body.lastIndexOf("\n\n");
+  if (idx >= 0) {
+    const head = body.slice(0, idx).trimEnd();
+    const tail = body.slice(idx + 2).trim();
+    if (tail && looksLikeRenderableImageUrl(tail)) {
+      return { ...msg, content: head, attachmentUrl: tail };
+    }
+  }
+
+  const nl = body.lastIndexOf("\n");
+  if (nl >= 0) {
+    const head = body.slice(0, nl).trimEnd();
+    const tail = body.slice(nl + 1).trim();
+    if (tail && looksLikeRenderableImageUrl(tail)) {
+      return { ...msg, content: head, attachmentUrl: tail };
+    }
+  }
+
+  return msg;
+}
+
 const parseMessages = (raw: string | null): DaoChatMessage[] => {
   if (!raw) return [];
   try {
@@ -72,6 +137,9 @@ const parseMessages = (raw: string | null): DaoChatMessage[] => {
         if (!msg || typeof msg.content !== "string" || typeof msg.createdAt !== "number") return false;
         return msg.content.trim().length > 0 || hasAttachment(msg as DaoChatMessage);
       })
+      .map((msg) =>
+        hydrateChatImageAttachment(msg as DaoChatMessage),
+      )
       .sort((a, b) => a.createdAt - b.createdAt);
   } catch {
     return [];
@@ -100,15 +168,17 @@ const fromSupabaseRows = (
   }>,
 ): DaoChatMessage[] =>
   rows
-    .map((row) => ({
-      id: row.id,
-      daoAddress: row.room_key,
-      senderWallet: row.sender_wallet,
-      senderLabel: row.sender_label,
-      content: row.content ?? "",
-      createdAt: new Date(row.created_at).getTime(),
-      attachmentUrl: row.attachment_url?.trim() || undefined,
-    }))
+    .map((row) =>
+      hydrateChatImageAttachment({
+        id: row.id,
+        daoAddress: row.room_key,
+        senderWallet: row.sender_wallet,
+        senderLabel: row.sender_label,
+        content: row.content ?? "",
+        createdAt: new Date(row.created_at).getTime(),
+        attachmentUrl: row.attachment_url?.trim() || undefined,
+      }),
+    )
     .sort((a, b) => a.createdAt - b.createdAt);
 
 const loadDaoChatMessagesRemote = async (
