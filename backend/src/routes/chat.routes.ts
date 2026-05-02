@@ -1,170 +1,174 @@
+import { randomUUID } from 'crypto';
+
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
-import { google } from 'googleapis';
-import nodemailer from 'nodemailer';
+
+import { prisma } from '../db/prisma';
+import { rabbitUrlConfigured } from '../messaging/connection';
+import { enqueueChatWebhookJob } from '../messaging/publish/chatMessage.publisher';
+import type { ChatMessageReceivedPayload } from '../messaging/types';
+import {
+  processChatMessageDispatch,
+} from '../services/chat-notification.processor';
+
+import { normalizeWalletAddress } from '../utils/wallet';
 
 const router = Router();
-const prisma = new PrismaClient();
 
-// Subscribe to chat notifications
 router.post('/subscribe', async (req, res) => {
   try {
-    const { walletAddress, daoAddress, receiveNotifications, email } = req.body;
-    
-    console.log('📝 Subscribe request:', { walletAddress, daoAddress, receiveNotifications });
-    
+    const { walletAddress: rawWallet, daoAddress: rawDao, receiveNotifications, email } = req.body;
+    const walletAddress = normalizeWalletAddress(rawWallet);
+    const daoNorm = typeof rawDao === 'string' ? rawDao.trim().toLowerCase() : '';
+
+    if (!walletAddress) {
+      return res.status(400).json({ error: 'Invalid wallet address' });
+    }
+    if (!daoNorm || !daoNorm.startsWith('0x')) {
+      return res.status(400).json({ error: 'Invalid DAO address' });
+    }
+
+    console.log('📝 Subscribe request:', { walletAddress, daoAddress: daoNorm, receiveNotifications });
+
     let user = await prisma.user.findUnique({
-      where: { walletAddress }
+      where: { walletAddress },
     });
-    
+
     if (!user) {
       user = await prisma.user.create({
-        data: { walletAddress, email }
+        data: { walletAddress, email: typeof email === 'string' && email.trim() ? email.trim() : undefined },
       });
-    } else if (email && !user.email) {
+    } else if (email && typeof email === 'string' && email.trim() && !user.email) {
       user = await prisma.user.update({
         where: { id: user.id },
-        data: { email }
+        data: { email: email.trim() },
       });
     }
-    
+
     const subscription = await prisma.chatSubscription.upsert({
       where: {
         userId_daoAddress: {
           userId: user.id,
-          daoAddress: daoAddress.toLowerCase()
-        }
+          daoAddress: daoNorm,
+        },
       },
-      update: { receiveNotifications },
+      update: { receiveNotifications: Boolean(receiveNotifications) },
       create: {
         userId: user.id,
-        daoAddress: daoAddress.toLowerCase(),
-        receiveNotifications
-      }
+        daoAddress: daoNorm,
+        receiveNotifications: Boolean(receiveNotifications),
+      },
     });
-    
-    console.log('✅ Subscription created:', subscription);
+
+    console.log('✅ Subscription created:', subscription.id);
     res.json({ success: true, subscription });
-  } catch (error: any) {
-    console.error('Subscribe error:', error);
-    res.status(500).json({ error: error.message });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.error('Subscribe error:', message);
+    res.status(500).json({ error: message });
   }
 });
 
-// Get user's subscriptions
 router.get('/subscriptions/:walletAddress', async (req, res) => {
   try {
-    const { walletAddress } = req.params;
-    
+    const walletAddress = normalizeWalletAddress(req.params.walletAddress);
+    if (!walletAddress) {
+      return res.status(400).json({ error: 'Invalid wallet address' });
+    }
+
     const user = await prisma.user.findUnique({
       where: { walletAddress },
       include: {
-        chatSubscriptions: true
-      }
+        chatSubscriptions: true,
+      },
     });
-    
+
     res.json(user?.chatSubscriptions || []);
-  } catch (error: any) {
-    console.error('Get subscriptions error:', error);
-    res.status(500).json({ error: error.message });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.error('Get subscriptions error:', message);
+    res.status(500).json({ error: message });
   }
 });
 
-// Webhook for new chat messages
+/** Webhook publishes to RabbitMQ (preferred) — workers handle DB writes + SMTP jobs. Falls back synchronous if broker absent or publish fails. */
 router.post('/webhook/new-message', async (req, res) => {
   try {
     const { daoAddress, daoName, message, senderWallet, senderName, timestamp } = req.body;
-    
-    console.log(`📨 New message in ${daoName} from ${senderName}`);
-    console.log(`Message: ${message}`);
-    
-    const subscribers = await prisma.chatSubscription.findMany({
-      where: {
-        daoAddress: daoAddress.toLowerCase(),
-        receiveNotifications: true
-      },
-      include: {
-        user: true
-      }
-    });
-    
-    const recipients = subscribers.filter(
-      sub => sub.user.walletAddress.toLowerCase() !== senderWallet.toLowerCase()
-    );
-    
-    console.log(`📧 Found ${recipients.length} subscribers to notify`);
-    
-    let emailCount = 0;
-    for (const recipient of recipients) {
-      const user = recipient.user;
-      
-      if (user.email) {
-        try {
-          // Use App Password method (simpler, no TypeScript errors)
-          await sendEmailWithAppPassword(user.email, daoName, senderName, message);
-          emailCount++;
-          console.log(`✅ Email sent to ${user.email}`);
-        } catch (error: any) {
-          console.error(`Failed to send email to ${user.email}:`, error.message);
-        }
+    const daoKey = typeof daoAddress === 'string' ? daoAddress.trim().toLowerCase() : '';
+
+    if (!daoKey) {
+      return res.status(400).json({ error: 'daoAddress is required' });
+    }
+
+    const preview = typeof message === 'string' ? message : '';
+    const msgStr = typeof senderName === 'string' ? senderName : 'Someone';
+    const titleDao = typeof daoName === 'string' ? daoName : 'Community';
+    const ts = typeof timestamp === 'number' ? timestamp : Date.now();
+    const sender = typeof senderWallet === 'string' ? senderWallet : '';
+
+    console.log(`📨 Webhook: ${titleDao} from ${msgStr}`);
+
+    if (rabbitUrlConfigured()) {
+      try {
+        const { correlationId } = await enqueueChatWebhookJob({
+          daoAddress: daoKey,
+          daoName: titleDao,
+          message: preview,
+          senderWallet: sender,
+          senderName: msgStr,
+          timestamp: ts,
+        });
+
+        const excludingSender = normalizeWalletAddress(sender);
+        const estimatedRecipients = await prisma.chatSubscription.count({
+          where: {
+            daoAddress: daoKey,
+            receiveNotifications: true,
+            ...(excludingSender
+              ? { user: { walletAddress: { not: excludingSender } } }
+              : {}),
+          },
+        });
+
+        return res.status(202).json({
+          success: true,
+          queued: true,
+          correlationId,
+          estimatedRecipients: Math.max(0, estimatedRecipients),
+        });
+      } catch (queueErr: unknown) {
+        const warn = queueErr instanceof Error ? queueErr.message : String(queueErr);
+        console.warn('[webhook] RabbitMQ publish failed — running synchronous pipeline:', warn);
       }
     }
-    
-    res.json({ success: true, notified: emailCount });
-  } catch (error: any) {
-    console.error('Webhook error:', error);
-    res.status(500).json({ error: error.message });
+
+    const correlationId = `sync:${randomUUID()}`;
+    const payload: ChatMessageReceivedPayload = {
+      v: 1,
+      correlationId,
+      daoAddress: daoKey,
+      daoName: titleDao,
+      message: preview,
+      senderWallet: sender,
+      senderName: msgStr,
+      timestamp: ts,
+    };
+
+    const outcome = await processChatMessageDispatch(payload, null, { mode: 'sync' });
+
+    return res.json({
+      success: true,
+      queued: false,
+      correlationId,
+      notified: outcome.emailJobsPublished,
+      inAppNotifications: outcome.inAppNotifications,
+      subscribers: outcome.subscriberCount,
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.error('Webhook error:', message);
+    res.status(500).json({ error: message });
   }
 });
-
-// Send email using App Password (works with nodemailer types)
-async function sendEmailWithAppPassword(
-  toEmail: string,
-  daoName: string,
-  senderName: string,
-  message: string
-) {
-  // Create transporter with gmail service (no TypeScript errors)
-  const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: process.env.GMAIL_USER,
-      pass: process.env.GMAIL_APP_PASSWORD
-    }
-  });
-  
-  const html = `
-    <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px;">
-      <div style="background: linear-gradient(135deg, #059669, #10b981); color: white; padding: 20px; text-align: center; border-radius: 12px 12px 0 0;">
-        <h2 style="margin: 0;">💬 New Chat Message</h2>
-      </div>
-      <div style="background: #ffffff; padding: 20px; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 12px 12px;">
-        <p style="font-size: 14px; color: #666;">in <strong>${daoName}</strong></p>
-        <div style="background: #f0fdf4; padding: 15px; border-radius: 8px; margin: 15px 0;">
-          <p style="font-weight: bold; margin: 0 0 8px 0;">${senderName} wrote:</p>
-          <p style="margin: 0; color: #1e293b;">${message}</p>
-        </div>
-        <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/messages" 
-           style="display: inline-block; background: #059669; color: white; padding: 10px 20px; text-decoration: none; border-radius: 8px; margin-top: 10px;">
-          Reply in Chat →
-        </a>
-      </div>
-      <div style="text-align: center; padding: 20px; font-size: 12px; color: #94a3b8;">
-        <p>You're receiving this because you subscribed to notifications for this DAO.</p>
-        <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings" style="color: #059669;">Manage notifications</a>
-      </div>
-    </div>
-  `;
-  
-  const result = await transporter.sendMail({
-    from: `"LocalDAO" <${process.env.GMAIL_USER}>`,
-    to: toEmail,
-    subject: `💬 New message in ${daoName}`,
-    html
-  });
-  
-  console.log('📧 Email sent, messageId:', result.messageId);
-  return result;
-}
 
 export default router;

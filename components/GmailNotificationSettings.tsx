@@ -1,20 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { Mail, Bell, BellOff, Check, AlertCircle } from 'lucide-react';
+import { BACKEND_URL } from '../utils/backendUrl';
 
 interface GmailNotificationSettingsProps {
   walletAddress: string;
   daoAddress: string;
   daoName: string;
+  subscriberEmail?: string;
   onSubscriptionChange?: (isSubscribed: boolean) => void;
 }
-
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
 
 export const GmailNotificationSettings: React.FC<GmailNotificationSettingsProps> = ({
   walletAddress,
   daoAddress,
   daoName,
-  onSubscriptionChange
+  subscriberEmail,
+  onSubscriptionChange,
 }) => {
   const [isConnected, setIsConnected] = useState(false);
   const [isSubscribed, setIsSubscribed] = useState(false);
@@ -87,8 +88,9 @@ export const GmailNotificationSettings: React.FC<GmailNotificationSettingsProps>
         body: JSON.stringify({
           walletAddress,
           daoAddress: daoAddress.toLowerCase(),
-          receiveNotifications: !isSubscribed
-        })
+          receiveNotifications: !isSubscribed,
+          email: subscriberEmail?.trim() || undefined,
+        }),
       });
       
       if (response.ok) {

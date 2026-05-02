@@ -434,6 +434,15 @@ const publicClient = createPublicClient({
   transport: fallback(RPC_ENDPOINTS.map((url) => http(url))),
 });
 
+/** viem narrows reads/simulations against EIP-7702-style extras; dynamic ABIs do not satisfy that union. */
+function readContractRpc<T = any>(args: Record<string, unknown>): Promise<T> {
+  return publicClient.readContract(args as never) as Promise<T>;
+}
+
+function simulateContractRpc(args: Record<string, unknown>) {
+  return publicClient.simulateContract(args as never);
+}
+
 async function getLogsWithRpcFallback(params: Parameters<typeof publicClient.getLogs>[0]) {
   let lastError: unknown = null;
   for (const url of RPC_ENDPOINTS) {
@@ -590,24 +599,24 @@ export async function fetchDaoUserRole(
   walletAddress: Address
 ): Promise<DaoUserRole> {
   const [creator, adminFlag, financeFlag, verifiedFlag] = await Promise.all([
-    publicClient.readContract({
+    readContractRpc({
       address: daoAddress,
       abi: LOCAL_DAO_ABI,
       functionName: "creator",
     }),
-    publicClient.readContract({
+    readContractRpc({
       address: daoAddress,
       abi: LOCAL_DAO_ABI,
       functionName: "isAdmin",
       args: [walletAddress],
     }),
-    publicClient.readContract({
+    readContractRpc({
       address: daoAddress,
       abi: LOCAL_DAO_ABI,
       functionName: "isFinanceManager",
       args: [walletAddress],
     }),
-    publicClient.readContract({
+    readContractRpc({
       address: daoAddress,
       abi: LOCAL_DAO_ABI,
       functionName: "isVerifiedMember",
@@ -630,7 +639,7 @@ export async function createDaoOnFactory(
   await wallet.switchChain(APP_CHAIN_ID);
   const walletClient = await getWalletClient(wallet);
 
-  const { request } = await publicClient.simulateContract({
+  const { request } = await simulateContractRpc({
     address: FACTORY_ADDRESS,
     abi: FACTORY_ABI,
     functionName: "createDAO",
@@ -646,20 +655,22 @@ export async function createDaoOnFactory(
     account: wallet.address as Address,
   });
 
-  const txHash = await walletClient.writeContract(request);
+  const txHash = await walletClient.writeContract(request as never);
   const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
 
   let daoAddress: Address | null = null;
   for (const log of receipt.logs) {
     if (log.address.toLowerCase() !== FACTORY_ADDRESS.toLowerCase()) continue;
+    const topics = (log as { topics?: readonly Hex[] }).topics;
+    if (!topics?.length) continue;
     try {
       const decoded = decodeEventLog({
         abi: FACTORY_ABI,
         data: log.data,
-        topics: log.topics,
-      });
+        topics: [...topics] as [signature: Hex, ...Hex[]],
+      }) as { eventName: string; args: { daoAddress: Address } };
       if (decoded.eventName === "DAOCreated") {
-        daoAddress = decoded.args.daoAddress as Address;
+        daoAddress = decoded.args.daoAddress;
         break;
       }
     } catch {
@@ -673,15 +684,17 @@ export async function createDaoOnFactory(
 export async function fetchActiveDaos(): Promise<OnchainDao[]> {
   let activeAddresses: Address[] = [];
   try {
-    activeAddresses = await publicClient.readContract({
-      address: FACTORY_ADDRESS,
-      abi: FACTORY_ABI,
-      functionName: "getActiveDAOs",
-    });
+    activeAddresses = [
+      ...(await readContractRpc<readonly Address[]>({
+        address: FACTORY_ADDRESS,
+        abi: FACTORY_ABI,
+        functionName: "getActiveDAOs",
+      })),
+    ];
   } catch {
     // Some deployed factory variants may not expose getActiveDAOs reliably.
     // Fallback to getAllDAOs and filter against daoInfo.isActive.
-    const allAddresses = await publicClient.readContract({
+    const allAddresses = await readContractRpc({
       address: FACTORY_ADDRESS,
       abi: FACTORY_ABI,
       functionName: "getAllDAOs",
@@ -689,7 +702,7 @@ export async function fetchActiveDaos(): Promise<OnchainDao[]> {
     const checks = await Promise.all(
       allAddresses.map(async (daoAddress) => {
         try {
-          const meta = await publicClient.readContract({
+          const meta = await readContractRpc({
             address: FACTORY_ADDRESS,
             abi: FACTORY_ABI,
             functionName: "daoInfo",
@@ -707,23 +720,23 @@ export async function fetchActiveDaos(): Promise<OnchainDao[]> {
   const daos = await Promise.all(
     activeAddresses.map(async (daoAddress) => {
       const [meta, description, memberCount, tvlRaw] = await Promise.all([
-        publicClient.readContract({
+        readContractRpc({
           address: FACTORY_ADDRESS,
           abi: FACTORY_ABI,
           functionName: "daoInfo",
           args: [daoAddress],
         }),
-        publicClient.readContract({
+        readContractRpc({
           address: daoAddress,
           abi: LOCAL_DAO_ABI,
           functionName: "description",
         }),
-        publicClient.readContract({
+        readContractRpc({
           address: daoAddress,
           abi: LOCAL_DAO_ABI,
           functionName: "memberCount",
         }),
-        publicClient.readContract({
+        readContractRpc({
           address: daoAddress,
           abi: LOCAL_DAO_ABI,
           functionName: "totalValueLocked",
@@ -758,7 +771,7 @@ export async function fetchAllInvestments(): Promise<OnchainInvestment[]> {
 
   const allByDao = await Promise.all(
     daos.map(async (dao) => {
-      const count = await publicClient.readContract({
+      const count = await readContractRpc({
         address: dao.address,
         abi: LOCAL_DAO_ABI,
         functionName: "investmentCount",
@@ -767,7 +780,7 @@ export async function fetchAllInvestments(): Promise<OnchainInvestment[]> {
       const ids = Array.from({ length: Number(count) }, (_, i) => BigInt(i + 1));
       const investments = await Promise.all(
         ids.map((id) =>
-          publicClient.readContract({
+          readContractRpc({
             address: dao.address,
             abi: LOCAL_DAO_ABI,
             functionName: "getInvestment",
@@ -825,7 +838,7 @@ export async function createInvestmentOnDao(
     throw new Error("Invalid grade.");
   }
 
-  const { request } = await publicClient.simulateContract({
+  const { request } = await simulateContractRpc({
     address: input.daoAddress,
     abi: LOCAL_DAO_ABI,
     functionName: "createInvestment",
@@ -841,19 +854,19 @@ export async function createInvestmentOnDao(
     account,
   });
 
-  const txHash = await walletClient.writeContract(request);
+  const txHash = await walletClient.writeContract(request as never);
   await publicClient.waitForTransactionReceipt({ hash: txHash });
   return txHash;
 }
 
 export async function fetchDaoParticipants(daoAddress: Address): Promise<DaoParticipant[]> {
-  const creator = await publicClient.readContract({
+  const creator = await readContractRpc({
     address: daoAddress,
     abi: LOCAL_DAO_ABI,
     functionName: "creator",
   });
 
-  const members = await publicClient.readContract({
+  const members = await readContractRpc({
     address: daoAddress,
     abi: LOCAL_DAO_ABI,
     functionName: "getAllMembers",
@@ -907,10 +920,10 @@ export async function fetchDaoParticipants(daoAddress: Address): Promise<DaoPart
         toBlock: "latest",
       }),
     ]);
-    adminAdded = added as Array<{ args: { admin: Address } }>;
-    adminRemoved = removed as Array<{ args: { admin: Address } }>;
-    fmAdded = fmAdd as Array<{ args: { manager: Address } }>;
-    fmRemoved = fmRem as Array<{ args: { manager: Address } }>;
+    adminAdded = added as unknown as Array<{ args: { admin: Address } }>;
+    adminRemoved = removed as unknown as Array<{ args: { admin: Address } }>;
+    fmAdded = fmAdd as unknown as Array<{ args: { manager: Address } }>;
+    fmRemoved = fmRem as unknown as Array<{ args: { manager: Address } }>;
   } catch {
     // Some public RPCs block eth_getLogs/CORS. Keep dialog functional with creator + members.
   }
@@ -949,7 +962,7 @@ export async function fetchParticipantUpvotes(
 ): Promise<Record<string, bigint>> {
   const rows = await Promise.all(
     participants.map(async (participant) => {
-      const vote = await publicClient.readContract({
+      const vote = await readContractRpc({
         address: daoAddress,
         abi: LOCAL_DAO_ABI,
         functionName: "getVote",
@@ -980,7 +993,7 @@ export async function voteOnInvestment(
     amountRaw = parseUnits(params.upvoteAmountUsdc || "0", 6);
     if (amountRaw <= 0n) throw new Error("Enter a valid USDC amount for upvote.");
 
-    const balance = await publicClient.readContract({
+    const balance = await readContractRpc({
       address: USDC_ADDRESS,
       abi: ERC20_ABI,
       functionName: "balanceOf",
@@ -990,7 +1003,7 @@ export async function voteOnInvestment(
       throw new Error("Insufficient USDC balance for this vote amount.");
     }
 
-    const allowance = await publicClient.readContract({
+    const allowance = await readContractRpc({
       address: USDC_ADDRESS,
       abi: ERC20_ABI,
       functionName: "allowance",
@@ -998,19 +1011,19 @@ export async function voteOnInvestment(
     });
 
     if (allowance < amountRaw) {
-      const { request: approveRequest } = await publicClient.simulateContract({
+      const { request: approveRequest } = await simulateContractRpc({
         address: USDC_ADDRESS,
         abi: ERC20_ABI,
         functionName: "approve",
         args: [params.daoAddress, amountRaw],
         account,
       });
-      const approveHash = await walletClient.writeContract(approveRequest);
+      const approveHash = await walletClient.writeContract(approveRequest as never);
       await publicClient.waitForTransactionReceipt({ hash: approveHash });
     }
   }
 
-  const { request } = await publicClient.simulateContract({
+  const { request } = await simulateContractRpc({
     address: params.daoAddress,
     abi: LOCAL_DAO_ABI,
     functionName: "vote",
@@ -1018,7 +1031,7 @@ export async function voteOnInvestment(
     account,
   });
 
-  const txHash = await walletClient.writeContract(request);
+  const txHash = await walletClient.writeContract(request as never);
   await publicClient.waitForTransactionReceipt({ hash: txHash });
   return txHash;
 }
@@ -1032,7 +1045,7 @@ export async function fetchYieldRows(userAddress?: Address): Promise<YieldRow[]>
 
   const rows = await Promise.all(
     withYield.map(async (investment) => {
-      const distribution = await publicClient.readContract({
+      const distribution = await readContractRpc({
         address: investment.daoAddress,
         abi: LOCAL_DAO_ABI,
         functionName: "getYieldDistribution",
@@ -1042,7 +1055,7 @@ export async function fetchYieldRows(userAddress?: Address): Promise<YieldRow[]>
       const claimable =
         userAddress == null
           ? 0n
-          : await publicClient.readContract({
+          : await readContractRpc({
               address: investment.daoAddress,
               abi: LOCAL_DAO_ABI,
               functionName: "calculateClaimableYield",
@@ -1074,7 +1087,7 @@ export async function claimInvestmentYield(
   const walletClient = await getWalletClient(wallet);
   const account = wallet.address as Address;
 
-  const { request } = await publicClient.simulateContract({
+  const { request } = await simulateContractRpc({
     address: daoAddress,
     abi: LOCAL_DAO_ABI,
     functionName: "claimYield",
@@ -1082,7 +1095,7 @@ export async function claimInvestmentYield(
     account,
   });
 
-  const txHash = await walletClient.writeContract(request);
+  const txHash = await walletClient.writeContract(request as never);
   await publicClient.waitForTransactionReceipt({ hash: txHash });
   return txHash;
 }
@@ -1102,7 +1115,7 @@ export async function depositInvestmentYield(
   const amountRaw = parseUnits(params.amountUsdc || "0", 6);
   if (amountRaw <= 0n) throw new Error("Yield amount must be greater than zero.");
 
-  const allowance = await publicClient.readContract({
+  const allowance = await readContractRpc({
     address: USDC_ADDRESS,
     abi: ERC20_ABI,
     functionName: "allowance",
@@ -1110,18 +1123,18 @@ export async function depositInvestmentYield(
   });
 
   if (allowance < amountRaw) {
-    const { request: approveRequest } = await publicClient.simulateContract({
+    const { request: approveRequest } = await simulateContractRpc({
       address: USDC_ADDRESS,
       abi: ERC20_ABI,
       functionName: "approve",
       args: [params.daoAddress, amountRaw],
       account,
     });
-    const approveHash = await walletClient.writeContract(approveRequest);
+    const approveHash = await walletClient.writeContract(approveRequest as never);
     await publicClient.waitForTransactionReceipt({ hash: approveHash });
   }
 
-  const { request } = await publicClient.simulateContract({
+  const { request } = await simulateContractRpc({
     address: params.daoAddress,
     abi: LOCAL_DAO_ABI,
     functionName: "depositYield",
@@ -1129,7 +1142,7 @@ export async function depositInvestmentYield(
     account,
   });
 
-  const txHash = await walletClient.writeContract(request);
+  const txHash = await walletClient.writeContract(request as never);
   await publicClient.waitForTransactionReceipt({ hash: txHash });
   return txHash;
 }
@@ -1149,7 +1162,7 @@ export async function extendInvestmentDeadline(
     throw new Error("Extension must be between 1 and 90 days.");
   }
 
-  const { request } = await publicClient.simulateContract({
+  const { request } = await simulateContractRpc({
     address: params.daoAddress,
     abi: LOCAL_DAO_ABI,
     functionName: "extendDeadline",
@@ -1157,7 +1170,7 @@ export async function extendInvestmentDeadline(
     account,
   });
 
-  const txHash = await walletClient.writeContract(request);
+  const txHash = await walletClient.writeContract(request as never);
   await publicClient.waitForTransactionReceipt({ hash: txHash });
   return txHash;
 }
@@ -1171,7 +1184,7 @@ export async function withdrawInvestmentStake(
   const walletClient = await getWalletClient(wallet);
   const account = wallet.address as Address;
 
-  const { request } = await publicClient.simulateContract({
+  const { request } = await simulateContractRpc({
     address: daoAddress,
     abi: LOCAL_DAO_ABI,
     functionName: "withdrawStake",
@@ -1179,7 +1192,7 @@ export async function withdrawInvestmentStake(
     account,
   });
 
-  const txHash = await walletClient.writeContract(request);
+  const txHash = await walletClient.writeContract(request as never);
   await publicClient.waitForTransactionReceipt({ hash: txHash });
   return txHash;
 }
@@ -1194,7 +1207,7 @@ export async function fetchWithdrawableStakeRows(
 
   const rows = await Promise.all(
     incomplete.map(async (investment) => {
-      const withdrawableAmount = await publicClient.readContract({
+      const withdrawableAmount = await readContractRpc({
         address: investment.daoAddress,
         abi: LOCAL_DAO_ABI,
         functionName: "getWithdrawableAmount",
@@ -1233,12 +1246,12 @@ export async function addMemberToDao(
   const account = wallet.address as Address;
 
   const [creator, adminFlag] = await Promise.all([
-    publicClient.readContract({
+    readContractRpc({
       address: params.daoAddress,
       abi: LOCAL_DAO_ABI,
       functionName: "creator",
     }),
-    publicClient.readContract({
+    readContractRpc({
       address: params.daoAddress,
       abi: LOCAL_DAO_ABI,
       functionName: "isAdmin",
@@ -1254,7 +1267,7 @@ export async function addMemberToDao(
     `manual://localdao/${params.memberWallet.toLowerCase()}/${Date.now()}`;
   const kycProofHash = deriveKycProofHash(proofReferenceUsed);
 
-  const { request } = await publicClient.simulateContract({
+  const { request } = await simulateContractRpc({
     address: params.daoAddress,
     abi: LOCAL_DAO_ABI,
     functionName: "addMember",
@@ -1262,7 +1275,7 @@ export async function addMemberToDao(
     account,
   });
 
-  const txHash = await walletClient.writeContract(request);
+  const txHash = await walletClient.writeContract(request as never);
   await publicClient.waitForTransactionReceipt({ hash: txHash });
 
   return { txHash, kycProofHash, proofReferenceUsed };
@@ -1289,14 +1302,14 @@ async function writeDaoContract(
   await wallet.switchChain(APP_CHAIN_ID);
   const walletClient = await getWalletClient(wallet);
   const account = wallet.address as Address;
-  const { request } = await publicClient.simulateContract({
+  const { request } = await simulateContractRpc({
     address: daoAddress,
     abi: LOCAL_DAO_ABI,
     functionName,
     args,
     account,
   });
-  const txHash = await walletClient.writeContract(request);
+  const txHash = await walletClient.writeContract(request as never);
   await publicClient.waitForTransactionReceipt({ hash: txHash });
   return txHash;
 }
@@ -1425,7 +1438,7 @@ export async function updateDaoInfoOnchain(
   const walletClient = await getWalletClient(wallet);
   const account = wallet.address as Address;
 
-  const { request } = await publicClient.simulateContract({
+  const { request } = await simulateContractRpc({
     address: params.daoAddress,
     abi: LOCAL_DAO_ABI,
     functionName: "updateDAOInfo",
@@ -1433,7 +1446,7 @@ export async function updateDaoInfoOnchain(
     account,
   });
 
-  const txHash = await walletClient.writeContract(request);
+  const txHash = await walletClient.writeContract(request as never);
   await publicClient.waitForTransactionReceipt({ hash: txHash });
   return txHash;
 }
@@ -1444,12 +1457,12 @@ export async function fetchAdminManagedDaos(walletAddress?: Address): Promise<On
   const checks = await Promise.all(
     allDaos.map(async (dao) => {
       const [creator, adminFlag] = await Promise.all([
-        publicClient.readContract({
+        readContractRpc({
           address: dao.address,
           abi: LOCAL_DAO_ABI,
           functionName: "creator",
         }),
-        publicClient.readContract({
+        readContractRpc({
           address: dao.address,
           abi: LOCAL_DAO_ABI,
           functionName: "isAdmin",

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { google } from 'googleapis';
+import { normalizeWalletAddress } from '../utils/wallet';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -14,16 +15,19 @@ const oauth2Client = new google.auth.OAuth2(
 // Generate Gmail auth URL
 router.post('/gmail/connect', async (req, res) => {
   try {
-    const { walletAddress } = req.body;
+    const walletAddress = normalizeWalletAddress(req.body?.walletAddress);
+    if (!walletAddress) {
+      return res.status(400).json({ error: 'Invalid wallet address' });
+    }
     console.log('📧 Gmail connect request for:', walletAddress);
-    
+
     let user = await prisma.user.findUnique({
-      where: { walletAddress }
+      where: { walletAddress },
     });
-    
+
     if (!user) {
       user = await prisma.user.create({
-        data: { walletAddress }
+        data: { walletAddress },
       });
     }
     
@@ -51,21 +55,24 @@ router.get('/gmail/callback', async (req, res) => {
   try {
     const { code, state } = req.query;
     console.log('📞 OAuth callback received');
-    
+
     const { tokens } = await oauth2Client.getToken(code as string);
-    
+
     // Get user email from token
     oauth2Client.setCredentials(tokens);
     const oauth2 = google.oauth2({ auth: oauth2Client, version: 'v2' });
     const userInfo = await oauth2.userinfo.get();
-    
+
+    const email = userInfo.data.email?.trim() || undefined;
+    const existing = await prisma.user.findUnique({ where: { id: state as string } });
+
     await prisma.user.update({
       where: { id: state as string },
       data: {
         gmailAccessToken: tokens.access_token,
-        gmailRefreshToken: tokens.refresh_token,
-        email: userInfo.data.email
-      }
+        gmailRefreshToken: tokens.refresh_token ?? existing?.gmailRefreshToken ?? undefined,
+        ...(email ? { email } : {}),
+      },
     });
     
     console.log('✅ Gmail connected successfully for:', userInfo.data.email);
@@ -79,10 +86,13 @@ router.get('/gmail/callback', async (req, res) => {
 // Check Gmail connection status
 router.get('/preferences/:walletAddress', async (req, res) => {
   try {
-    const { walletAddress } = req.params;
-    
+    const walletAddress = normalizeWalletAddress(req.params.walletAddress);
+    if (!walletAddress) {
+      return res.status(400).json({ error: 'Invalid wallet address' });
+    }
+
     const user = await prisma.user.findUnique({
-      where: { walletAddress }
+      where: { walletAddress },
     });
     
     res.json({ 

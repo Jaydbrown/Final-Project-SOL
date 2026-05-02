@@ -6,16 +6,6 @@ import { PrivyProvider } from "@privy-io/react-auth";
 import { APP_CHAIN } from "./utils/contract";
 import 'react-toastify/dist/ReactToastify.css';
 
-declare global {
-  interface ImportMeta {
-    readonly env: ImportMetaEnv;
-  }
-}
-
-interface ImportMetaEnv {
-  readonly VITE_PRIVY_APP_ID: string;
-}
-
 const rootElement = document.getElementById('root');
 if (!rootElement) {
   throw new Error("Could not find root element to mount to");

@@ -42,7 +42,8 @@ export class EmailTemplate {
       `
     };
     
-    return templates[type] || `<p>${data.message}</p>`;
+    const template = templates[type as keyof typeof templates];
+    return template ?? `<p>${data.message}</p>`;
   }
   
   static getDailyDigest(notifications: any[]): string {

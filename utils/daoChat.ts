@@ -5,14 +5,29 @@ export type DaoChatMessage = {
   senderLabel: string;
   content: string;
   createdAt: number;
+  /** Public HTTPS URL (e.g. Pinata gateway) — persisted via Supabase `attachment_url` when configured. */
+  attachmentUrl?: string | null;
 };
+
+/** Session key: opening Messages from bell notification targets this DAO room. */
+export const MESSAGES_NAV_DAO_STORAGE_KEY = "localdao_navigate_messages_dao";
 
 const STORAGE_PREFIX = "localdao_chat_";
 const CHANNEL_NAME = "localdao_chat_updates";
-const SUPABASE_URL = (import.meta as ImportMeta & { env?: Record<string, string> }).env
-  ?.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = (import.meta as ImportMeta & { env?: Record<string, string> }).env
-  ?.VITE_SUPABASE_ANON_KEY;
+const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim();
+const SUPABASE_ANON_KEY = (
+  (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined)?.trim() ||
+  (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined)?.trim()
+);
+
+const SUPABASE_SELECT_WITH_ATTACH =
+  "id,room_key,sender_wallet,sender_label,content,created_at,attachment_url";
+const SUPABASE_SELECT_BASE = "id,room_key,sender_wallet,sender_label,content,created_at";
+
+const supabaseAttachmentColumnUnsupported = (status: number, body: string) =>
+  status === 400 &&
+  /attachment_url|42703|PGRST204|column .* does not exist|schema cache/i.test(body);
+/** For `attachment_url` on messages, run `supabase-scripts/add-chat-attachment-url.sql` on your Supabase project. */
 const SUPABASE_TABLE = "dao_chat_messages";
 const SUPABASE_SCHEMA = "public";
 
@@ -44,13 +59,19 @@ const supabaseHeaders = () => ({
   "Content-Type": "application/json",
 });
 
+const hasAttachment = (msg: DaoChatMessage) =>
+  typeof msg.attachmentUrl === "string" && Boolean(msg.attachmentUrl.trim());
+
 const parseMessages = (raw: string | null): DaoChatMessage[] => {
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw) as DaoChatMessage[];
     if (!Array.isArray(parsed)) return [];
     return parsed
-      .filter((msg) => msg && typeof msg.content === "string")
+      .filter((msg) => {
+        if (!msg || typeof msg.content !== "string" || typeof msg.createdAt !== "number") return false;
+        return msg.content.trim().length > 0 || hasAttachment(msg as DaoChatMessage);
+      })
       .sort((a, b) => a.createdAt - b.createdAt);
   } catch {
     return [];
@@ -75,6 +96,7 @@ const fromSupabaseRows = (
     sender_label: string;
     content: string;
     created_at: string;
+    attachment_url?: string | null;
   }>,
 ): DaoChatMessage[] =>
   rows
@@ -83,8 +105,9 @@ const fromSupabaseRows = (
       daoAddress: row.room_key,
       senderWallet: row.sender_wallet,
       senderLabel: row.sender_label,
-      content: row.content,
+      content: row.content ?? "",
       createdAt: new Date(row.created_at).getTime(),
+      attachmentUrl: row.attachment_url?.trim() || undefined,
     }))
     .sort((a, b) => a.createdAt - b.createdAt);
 
@@ -93,29 +116,51 @@ const loadDaoChatMessagesRemote = async (
   limit: number,
 ): Promise<DaoChatMessage[]> => {
   const roomKey = getRoomKey(daoAddress);
-  const query = new URLSearchParams({
-    select: "id,room_key,sender_wallet,sender_label,content,created_at",
-    room_key: `eq.${roomKey}`,
-    order: "created_at.asc",
-    limit: String(limit),
-  });
-  const response = await fetch(`${getSupabaseRestUrl()}?${query.toString()}`, {
-    method: "GET",
-    headers: supabaseHeaders(),
-  });
-  if (!response.ok) {
+
+  const fetchWithSelect = async (select: string) => {
+    const query = new URLSearchParams({
+      select,
+      room_key: `eq.${roomKey}`,
+      order: "created_at.asc",
+      limit: String(limit),
+    });
+    const response = await fetch(`${getSupabaseRestUrl()}?${query.toString()}`, {
+      method: "GET",
+      headers: supabaseHeaders(),
+    });
     const body = await response.text();
-    throw new Error(`Failed to load DAO chat messages: ${body || response.statusText}`);
+    let rows: unknown[] = [];
+    if (response.ok && body) {
+      try {
+        const parsed = JSON.parse(body) as unknown;
+        if (Array.isArray(parsed)) rows = parsed;
+      } catch {
+        rows = [];
+      }
+    }
+    return { ok: response.ok, status: response.status, body, rows };
+  };
+
+  let first = await fetchWithSelect(SUPABASE_SELECT_WITH_ATTACH);
+  if (!first.ok && supabaseAttachmentColumnUnsupported(first.status, first.body)) {
+    first = await fetchWithSelect(SUPABASE_SELECT_BASE);
   }
-  const rows = (await response.json()) as Array<{
-    id: string;
-    room_key: string;
-    sender_wallet: string;
-    sender_label: string;
-    content: string;
-    created_at: string;
-  }>;
-  return fromSupabaseRows(rows);
+
+  if (!first.ok) {
+    throw new Error(`Failed to load DAO chat messages: ${first.body || "unknown error"}`);
+  }
+
+  return fromSupabaseRows(
+    first.rows as Array<{
+      id: string;
+      room_key: string;
+      sender_wallet: string;
+      sender_label: string;
+      content: string;
+      created_at: string;
+      attachment_url?: string | null;
+    }>,
+  );
 };
 
 const sendDaoChatMessageRemote = async (params: {
@@ -123,50 +168,85 @@ const sendDaoChatMessageRemote = async (params: {
   senderWallet: string;
   senderLabel: string;
   content: string;
+  attachmentUrl?: string | null;
 }): Promise<DaoChatMessage> => {
   const nowIso = new Date().toISOString();
-  const row = {
-    id:
-      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+  const attach = params.attachmentUrl?.trim() || "";
+  const id =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+  const rowBase = {
+    id,
     room_key: getRoomKey(params.daoAddress),
     sender_wallet: params.senderWallet,
     sender_label: params.senderLabel,
     content: params.content,
     created_at: nowIso,
   };
-  const response = await fetch(getSupabaseRestUrl(), {
-    method: "POST",
-    headers: {
-      ...supabaseHeaders(),
-      Prefer: "return=representation",
-    },
-    body: JSON.stringify([row]),
-  });
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`Failed to send DAO chat message: ${body || response.statusText}`);
+
+  const rowWithAttach = attach ? { ...rowBase, attachment_url: attach } : rowBase;
+
+  const postRow = async (payload: Record<string, unknown>) => {
+    const response = await fetch(getSupabaseRestUrl(), {
+      method: "POST",
+      headers: {
+        ...supabaseHeaders(),
+        Prefer: "return=representation",
+      },
+      body: JSON.stringify([payload]),
+    });
+    const bodyText = await response.text();
+    let rows: unknown[] = [];
+    if (response.ok && bodyText) {
+      try {
+        const parsed = JSON.parse(bodyText) as unknown;
+        if (Array.isArray(parsed)) rows = parsed;
+      } catch {
+        rows = [];
+      }
+    }
+    return { ok: response.ok, status: response.status, bodyText, rows };
+  };
+
+  let attempt = await postRow(rowWithAttach);
+
+  if (!attempt.ok && attach && supabaseAttachmentColumnUnsupported(attempt.status, attempt.bodyText)) {
+    const merged = [params.content.trim(), attach].filter(Boolean).join("\n\n").slice(0, 1000);
+    attempt = await postRow({ ...rowBase, content: merged });
   }
-  const rows = (await response.json()) as Array<{
+
+  if (!attempt.ok) {
+    throw new Error(`Failed to send DAO chat message: ${attempt.bodyText || String(attempt.status)}`);
+  }
+
+  type Row = {
     id: string;
     room_key: string;
     sender_wallet: string;
     sender_label: string;
     content: string;
     created_at: string;
-  }>;
-  const [message] = fromSupabaseRows(rows);
-  return (
-    message ?? {
-      id: row.id,
-      daoAddress: row.room_key,
-      senderWallet: row.sender_wallet,
-      senderLabel: row.sender_label,
-      content: row.content,
-      createdAt: new Date(row.created_at).getTime(),
-    }
-  );
+    attachment_url?: string | null;
+  };
+  const rows = attempt.rows as Row[];
+  const [parsed] = fromSupabaseRows(rows);
+  if (parsed) {
+    if (attach && !parsed.attachmentUrl) return { ...parsed, attachmentUrl: attach };
+    return parsed;
+  }
+
+  const createdTs = rows[0]?.created_at ? new Date(rows[0].created_at).getTime() : Date.now();
+  return {
+    id: rows[0]?.id ?? rowBase.id,
+    daoAddress: rowBase.room_key,
+    senderWallet: rowBase.sender_wallet,
+    senderLabel: rowBase.sender_label,
+    content: rows[0]?.content ?? rowBase.content,
+    attachmentUrl: attach || undefined,
+    createdAt: createdTs,
+  };
 };
 
 export const loadDaoChatMessages = (
@@ -187,15 +267,17 @@ export const sendDaoChatMessage = (params: {
   senderWallet: string;
   senderLabel: string;
   content: string;
+  attachmentUrl?: string | null;
 }): Promise<DaoChatMessage> => {
   const daoAddress = params.daoAddress.trim();
   const senderWallet = params.senderWallet.trim();
   const senderLabel = params.senderLabel.trim() || senderWallet;
   const content = params.content.trim();
+  const attachmentUrl = params.attachmentUrl?.trim() || "";
 
   if (!daoAddress) throw new Error("DAO address is required.");
   if (!senderWallet) throw new Error("Sender wallet is required.");
-  if (!content) throw new Error("Message cannot be empty.");
+  if (!content && !attachmentUrl) throw new Error("Message cannot be empty.");
 
   if (hasSupabaseConfig()) {
     return sendDaoChatMessageRemote({
@@ -203,6 +285,7 @@ export const sendDaoChatMessage = (params: {
       senderWallet,
       senderLabel,
       content: content.slice(0, 1000),
+      attachmentUrl: attachmentUrl || undefined,
     });
   }
 
@@ -215,6 +298,7 @@ export const sendDaoChatMessage = (params: {
     senderWallet,
     senderLabel,
     content: content.slice(0, 1000),
+    attachmentUrl: attachmentUrl || undefined,
     createdAt: Date.now(),
   };
   const messages = readDaoMessages(daoAddress);

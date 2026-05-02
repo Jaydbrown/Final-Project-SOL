@@ -5,9 +5,24 @@ import type { ViewState } from '../App';
 import { useWallets, type User as PrivyUser } from '@privy-io/react-auth';
 import { getChainName } from '../utils/chainUtils';
 import { fetchActiveDaos, fetchAllInvestments, fetchYieldRows, formatUsdcAmount, statusLabel, type OnchainDao } from '../utils/localDaoContracts';
-import { loadDaoChatMessages, subscribeDaoChat } from '../utils/daoChat';
+import {
+  loadDaoChatMessages,
+  subscribeDaoChat,
+  MESSAGES_NAV_DAO_STORAGE_KEY,
+} from '../utils/daoChat';
 import { Button, Modal } from '../components/UI';
 import { APP_CHAIN_NAME } from '../utils/contract';
+import { UserAvatar } from '../components/UserAvatar';
+import {
+  PROFILE_AVATAR_CHANGED_EVENT,
+  getStoredProfileAvatarUrl,
+  profileAvatarStorageKey,
+} from '../utils/profileAvatar';
+import {
+  formatWalletEncapsulated,
+  getAccountDisplayName,
+  getAccountInitial,
+} from '../utils/userDisplay';
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -23,10 +38,19 @@ const AppShell: React.FC<AppShellProps> = ({ children, currentView, onViewChange
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
-  const [notifications, setNotifications] = useState<Array<{ id: string; title: string; subtitle: string; view: ViewState }>>([]);
+  type BellNotification = {
+    id: string;
+    title: string;
+    subtitle: string;
+    view: ViewState;
+    /** When set, opening this item navigates to Messages for this DAO room. */
+    daoAddress?: string;
+  };
+  const [notifications, setNotifications] = useState<BellNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [trackedDaoAddresses, setTrackedDaoAddresses] = useState<string[]>([]);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [profileAvatarUrl, setProfileAvatarUrl] = useState<string | null>(null);
 
   const LAST_SEEN_KEY = 'localdao_chat_last_seen_by_room';
 
@@ -54,10 +78,15 @@ const AppShell: React.FC<AppShellProps> = ({ children, currentView, onViewChange
       setTrackedDaoAddresses(daoAddresses);
       const lastSeen = readLastSeen();
       const messageSets = await Promise.all(daoAddresses.map((address) => loadDaoChatMessages(address, 300)));
+      const self = walletAddress?.toLowerCase() ?? "";
       let total = 0;
       daoAddresses.forEach((address, idx) => {
         const seenAt = lastSeen[address] ?? 0;
-        total += messageSets[idx].filter((msg) => msg.createdAt > seenAt).length;
+        total += messageSets[idx].filter((msg) => {
+          if (msg.createdAt <= seenAt) return false;
+          if (!self) return false;
+          return msg.senderWallet.toLowerCase() !== self;
+        }).length;
       });
       setUnreadCount(total);
     } catch {
@@ -87,6 +116,42 @@ const AppShell: React.FC<AppShellProps> = ({ children, currentView, onViewChange
     (account) => account.type === 'wallet' && 'chainType' in account && account.chainType === 'ethereum'
   ) as { chainId?: string; address?: string } | undefined;
   const walletAddress = (connectedEthWallet?.address || ethWallet?.address) as `0x${string}` | undefined;
+  const accountDisplayName = useMemo(
+    () => getAccountDisplayName(user, walletAddress ?? ""),
+    [user, walletAddress],
+  );
+  const accountInitial = useMemo(
+    () => getAccountInitial(accountDisplayName, user?.email?.address),
+    [accountDisplayName, user?.email?.address],
+  );
+
+  useEffect(() => {
+    if (!walletAddress) {
+      setProfileAvatarUrl(null);
+      return;
+    }
+    setProfileAvatarUrl(getStoredProfileAvatarUrl(walletAddress));
+
+    const onAvatarEvent = (ev: Event) => {
+      const w = (ev as CustomEvent<{ wallet?: string }>).detail?.wallet;
+      if (w && walletAddress && w === walletAddress.toLowerCase()) {
+        setProfileAvatarUrl(getStoredProfileAvatarUrl(walletAddress));
+      }
+    };
+    const onStorage = (e: StorageEvent) => {
+      if (!walletAddress || e.key !== profileAvatarStorageKey(walletAddress)) {
+        return;
+      }
+      setProfileAvatarUrl(getStoredProfileAvatarUrl(walletAddress));
+    };
+    window.addEventListener(PROFILE_AVATAR_CHANGED_EVENT, onAvatarEvent);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener(PROFILE_AVATAR_CHANGED_EVENT, onAvatarEvent);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [walletAddress]);
+
   const rawChainName = connectedEthWallet?.chainId ? getChainName(connectedEthWallet.chainId) : getChainName(ethWallet?.chainId);
   const isWalletConnected = Boolean(walletAddress);
   const effectiveChainName = isWalletConnected && rawChainName === 'Not Connected' ? APP_CHAIN_NAME : rawChainName;
@@ -95,10 +160,45 @@ const AppShell: React.FC<AppShellProps> = ({ children, currentView, onViewChange
   const refreshNotifications = async () => {
     setNotificationsLoading(true);
     try {
-      const [investments, yields] = await Promise.all([
+      const [investments, yields, daos] = await Promise.all([
         fetchAllInvestments(),
         fetchYieldRows(walletAddress as `0x${string}` | undefined),
+        fetchActiveDaos(),
       ]);
+      const lastSeenMap = readLastSeen();
+      const self = walletAddress?.toLowerCase() ?? "";
+      const chatRows: Array<BellNotification & { _ts: number }> = [];
+      for (const dao of daos) {
+        if (!self) break;
+        const addr = dao.address.toLowerCase();
+        const msgs = await loadDaoChatMessages(addr, 150);
+        const seen = lastSeenMap[addr] ?? 0;
+        const incoming = msgs.filter(
+          (m) => m.createdAt > seen && m.senderWallet.toLowerCase() !== self,
+        );
+        if (incoming.length === 0) continue;
+        const latest = incoming[incoming.length - 1]!;
+        const textPreview = latest.content.trim().slice(0, 72) + (latest.content.trim().length > 72 ? "…" : "");
+        const preview = latest.attachmentUrl?.trim()
+          ? textPreview
+            ? `📷 ${textPreview}`
+            : "📷 Photo shared"
+          : textPreview || "New message";
+        chatRows.push({
+          id: `chat-${addr}-${latest.id}`,
+          title: `Messages · ${dao.name}`,
+          subtitle:
+            incoming.length > 1
+              ? `${incoming.length} new · ${preview}`
+              : `${latest.senderLabel}: ${preview}`,
+          view: "messages",
+          daoAddress: dao.address,
+          _ts: latest.createdAt,
+        });
+      }
+      chatRows.sort((a, b) => b._ts - a._ts);
+      const chatItems: BellNotification[] = chatRows.map(({ _ts: _t, ...rest }) => rest);
+
       const investmentItems = investments
         .filter((item) => item.status === 0)
         .slice(0, 4)
@@ -117,7 +217,7 @@ const AppShell: React.FC<AppShellProps> = ({ children, currentView, onViewChange
           subtitle: `${item.daoName} • ${formatUsdcAmount(item.claimable)} claimable`,
           view: 'yields' as ViewState,
         }));
-      setNotifications([...investmentItems, ...yieldItems]);
+      setNotifications([...chatItems, ...investmentItems, ...yieldItems]);
     } catch {
       setNotifications([]);
     } finally {
@@ -127,7 +227,7 @@ const AppShell: React.FC<AppShellProps> = ({ children, currentView, onViewChange
 
   useEffect(() => {
     void refreshUnread();
-  }, []);
+  }, [walletAddress]);
 
   useEffect(() => {
     if (isNotificationsOpen) {
@@ -225,21 +325,21 @@ const AppShell: React.FC<AppShellProps> = ({ children, currentView, onViewChange
               <Globe className="w-3 h-3 text-emerald-500" />
               {sidebarConnectionLabel}
             </p>
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 text-xs font-bold">
-                {user?.email?.address ? user.email.address.charAt(0).toUpperCase() : 'U'}
-              </div>
-              <div className="overflow-hidden flex-1">
+            <button
+              type="button"
+              onClick={() => onViewChange("profile")}
+              className="flex items-center gap-3 w-full text-left rounded-xl hover:bg-slate-100/80 transition-colors -mx-1 px-1 py-0.5"
+            >
+              <UserAvatar imageUrl={profileAvatarUrl} initials={accountInitial} size={32} />
+              <div className="overflow-hidden flex-1 min-w-0">
                 <p className="text-xs font-bold text-slate-900 truncate">
-                  {user?.email?.address || 'User'}
+                  {isWalletConnected ? accountDisplayName : user?.email?.address || "User"}
                 </p>
-                <p className="text-[10px] text-slate-500 font-mono">
-                  {walletAddress
-                    ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`
-                    : 'No wallet'}
+                <p className="text-[10px] text-slate-500 font-mono truncate" title={walletAddress ?? undefined}>
+                  {walletAddress ? formatWalletEncapsulated(walletAddress) : "No wallet"}
                 </p>
               </div>
-            </div>
+            </button>
           </div>
 
           <button
@@ -278,7 +378,7 @@ const AppShell: React.FC<AppShellProps> = ({ children, currentView, onViewChange
                 aria-label="Toggle notifications"
               >
               <Bell className="w-5 h-5" />
-              {notifications.length > 0 && (
+              {(notifications.length > 0 || unreadCount > 0) && (
                 <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
               )}
               </button>
@@ -297,12 +397,34 @@ const AppShell: React.FC<AppShellProps> = ({ children, currentView, onViewChange
                     {notificationsLoading ? (
                       <p className="text-sm text-slate-500 p-3">Loading notifications...</p>
                     ) : notifications.length === 0 ? (
-                      <p className="text-sm text-slate-500 p-3">No new notifications.</p>
+                      unreadCount > 0 ? (
+                        <div className="p-3">
+                          <p className="text-sm text-slate-600">You have unread community messages.</p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onViewChange("messages");
+                              setIsNotificationsOpen(false);
+                            }}
+                            className="mt-2 text-sm font-bold text-emerald-600 hover:underline"
+                          >
+                            Open Messages
+                          </button>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-slate-500 p-3">No new notifications.</p>
+                      )
                     ) : (
                       notifications.map((item) => (
                         <button
                           key={item.id}
                           onClick={() => {
+                            if (item.daoAddress?.trim()) {
+                              sessionStorage.setItem(
+                                MESSAGES_NAV_DAO_STORAGE_KEY,
+                                item.daoAddress.trim().toLowerCase(),
+                              );
+                            }
                             onViewChange(item.view);
                             setIsNotificationsOpen(false);
                           }}
@@ -318,14 +440,21 @@ const AppShell: React.FC<AppShellProps> = ({ children, currentView, onViewChange
               )}
             </div>
             <div className="h-8 w-[1px] bg-slate-200 hidden sm:block"></div>
-            <div className="hidden sm:flex items-center gap-3 bg-slate-100 px-4 py-2 rounded-full border border-slate-200 cursor-pointer" onClick={() => onViewChange('wallet')}>
-              <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
-              <span className="text-xs font-mono text-slate-600">
-                {walletAddress
-                  ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`
-                  : 'No wallet'}
-              </span>
-            </div>
+            <button
+              type="button"
+              className="hidden sm:flex items-center gap-2.5 bg-slate-100 pl-2 pr-4 py-1.5 rounded-full border border-slate-200 cursor-pointer hover:bg-slate-50 transition-colors max-w-[min(100%,220px)]"
+              onClick={() => onViewChange("profile")}
+            >
+              <UserAvatar imageUrl={profileAvatarUrl} initials={accountInitial} size={28} />
+              <div className="min-w-0 flex flex-col items-start">
+                <span className="text-xs font-bold text-slate-800 truncate w-full text-left">
+                  {walletAddress ? accountDisplayName : "Guest"}
+                </span>
+                <span className="text-[10px] text-slate-500 font-mono truncate w-full text-left" title={walletAddress ?? undefined}>
+                  {walletAddress ? formatWalletEncapsulated(walletAddress) : "No wallet"}
+                </span>
+              </div>
+            </button>
           </div>
         </header>
 

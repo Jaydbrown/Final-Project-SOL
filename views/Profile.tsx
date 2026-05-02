@@ -1,7 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { usePrivy } from "@privy-io/react-auth";
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { Card, Badge } from '../components/UI';
-import { CheckCircle, Copy, ExternalLink, Globe, Mail, Shield, Wallet } from 'lucide-react';
+import { UserAvatar } from '../components/UserAvatar';
+import { CheckCircle, Copy, ExternalLink, Globe, Mail, Shield, Trash2, Upload, Wallet } from 'lucide-react';
 import {
   fetchActiveDaos,
   fetchWalletDaoRoles,
@@ -14,20 +15,62 @@ import {
 import { maskAddress } from '../utils/address';
 import { copyText } from '../utils/clipboard';
 import { getAddressExplorerUrl } from '../utils/explorer';
+import { uploadImageToIpfs } from '../utils/ipfs';
+import {
+  PROFILE_AVATAR_CHANGED_EVENT,
+  clearStoredProfileAvatarUrl,
+  getStoredProfileAvatarUrl,
+  setStoredProfileAvatarUrl,
+} from '../utils/profileAvatar';
+import { getAccountDisplayName, getAccountInitial } from '../utils/userDisplay';
+import { formatTxError } from '../utils/toast';
+
+const MAX_PROFILE_AVATAR_BYTES = 4 * 1024 * 1024;
+const PROFILE_AVATAR_MIME = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+
+const pinataConfigured = () =>
+  Boolean((import.meta.env.VITE_PINATA_JWT as string | undefined)?.trim());
 
 const ProfileView: React.FC = () => {
   const { user } = usePrivy();
+  const { wallets } = useWallets();
   const [daos, setDaos] = useState<OnchainDao[]>([]);
   const [roleRows, setRoleRows] = useState<WalletDaoRoleRow[]>([]);
   const [yields, setYields] = useState<YieldRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [profileAvatarUrl, setProfileAvatarUrl] = useState<string | null>(null);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
 
   const walletAddress = useMemo(() => {
-    const wallet = user?.linkedAccounts?.find(
-      (account) => account.type === 'wallet' && 'address' in account
+    const embedded = wallets.find((w) => w.type === "ethereum")?.address;
+    const linked = user?.linkedAccounts?.find(
+      (account) => account.type === "wallet" && "address" in account,
     ) as { address?: string } | undefined;
-    return wallet?.address ?? '';
-  }, [user]);
+    return (embedded || linked?.address || "").trim();
+  }, [wallets, user]);
+
+  const displayName = useMemo(() => getAccountDisplayName(user, walletAddress), [user, walletAddress]);
+  const accountInitial = useMemo(
+    () => getAccountInitial(displayName, user?.email?.address),
+    [displayName, user?.email?.address],
+  );
+
+  useEffect(() => {
+    if (!walletAddress) {
+      setProfileAvatarUrl(null);
+      return;
+    }
+    setProfileAvatarUrl(getStoredProfileAvatarUrl(walletAddress));
+    const onChange = (ev: Event) => {
+      const w = (ev as CustomEvent<{ wallet?: string }>).detail?.wallet;
+      if (w === walletAddress.toLowerCase()) {
+        setProfileAvatarUrl(getStoredProfileAvatarUrl(walletAddress));
+      }
+    };
+    window.addEventListener(PROFILE_AVATAR_CHANGED_EVENT, onChange);
+    return () => window.removeEventListener(PROFILE_AVATAR_CHANGED_EVENT, onChange);
+  }, [walletAddress]);
 
   useEffect(() => {
     const load = async () => {
@@ -48,18 +91,99 @@ const ProfileView: React.FC = () => {
     void load();
   }, [walletAddress]);
 
-  const profileName = user?.email?.address ? user.email.address.split('@')[0] : 'Member';
   const totalYield = yields.reduce((sum, row) => sum + row.claimable, 0n);
+
+  const onPickAvatar: React.ChangeEventHandler<HTMLInputElement> = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !walletAddress) return;
+    if (!PROFILE_AVATAR_MIME.has(file.type)) {
+      window.alert("Please choose a JPEG, PNG, GIF, or WebP image.");
+      return;
+    }
+    if (file.size > MAX_PROFILE_AVATAR_BYTES) {
+      window.alert("Image must be 4 MB or smaller.");
+      return;
+    }
+    if (!pinataConfigured()) {
+      window.alert("Add VITE_PINATA_JWT to your environment to upload a profile photo.");
+      return;
+    }
+    setAvatarBusy(true);
+    try {
+      const { gatewayUrl } = await uploadImageToIpfs(file);
+      setStoredProfileAvatarUrl(walletAddress, gatewayUrl);
+      setProfileAvatarUrl(gatewayUrl);
+    } catch (err) {
+      window.alert(formatTxError(err, "Could not upload photo."));
+    } finally {
+      setAvatarBusy(false);
+    }
+  };
+
+  const removeAvatar = () => {
+    if (!walletAddress) return;
+    clearStoredProfileAvatarUrl(walletAddress);
+    setProfileAvatarUrl(null);
+  };
 
   return (
     <div className="max-w-5xl mx-auto pb-12 animate-in fade-in duration-700 space-y-6">
       <Card className="p-8">
-        <div className="flex items-center justify-between flex-wrap gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900">{profileName}</h1>
-            <p className="text-sm text-slate-500">{user?.email?.address ?? 'No email linked'}</p>
+        <input
+          ref={avatarInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/gif,image/webp"
+          className="hidden"
+          onChange={onPickAvatar}
+        />
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-6 flex-wrap">
+          <div className="flex items-start gap-5">
+            <div className="relative shrink-0">
+              <UserAvatar imageUrl={profileAvatarUrl} initials={accountInitial} size={88} />
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-2xl font-bold text-slate-900 truncate">{displayName}</h1>
+              <p className="text-sm text-slate-500 mt-0.5">
+                {user?.email?.address ?? "No email linked"}
+              </p>
+              {walletAddress ? (
+                <div className="mt-4 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={avatarBusy || !pinataConfigured()}
+                    onClick={() => avatarInputRef.current?.click()}
+                    className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <Upload className="w-4 h-4" />
+                    {avatarBusy ? "Uploading…" : "Upload profile photo"}
+                  </button>
+                  {profileAvatarUrl ? (
+                    <button
+                      type="button"
+                      onClick={removeAvatar}
+                      className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 text-slate-700 text-sm font-semibold hover:bg-slate-50 transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Remove
+                    </button>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-400 mt-3">Connect a wallet to save a profile photo.</p>
+              )}
+              {!pinataConfigured() ? (
+                <p className="text-xs text-amber-700 mt-2 max-w-md">
+                  Set <span className="font-mono">VITE_PINATA_JWT</span> to enable uploads. Photos are stored on IPFS and the URL is saved in this browser for your wallet.
+                </p>
+              ) : walletAddress ? (
+                <p className="text-xs text-slate-400 mt-2 max-w-md">
+                  This picture appears next to your name in the sidebar and header. It is stored locally per wallet on this device.
+                </p>
+              ) : null}
+            </div>
           </div>
-          <Badge variant="success">
+          <Badge variant="success" className="shrink-0">
             <CheckCircle className="w-3 h-3 mr-1" />
             Authenticated
           </Badge>

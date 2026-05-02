@@ -1,17 +1,30 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { Card } from "../components/UI";
-import { ArrowLeft, MessageSquare, Search, Send, Bell, BellOff, Mail, Check } from "lucide-react";
+import { UserAvatar } from "../components/UserAvatar";
+import { ArrowLeft, MessageSquare, Search, Send, Bell, BellOff, Mail, Check, ImagePlus, X } from "lucide-react";
 import { type OnchainDao, fetchActiveDaos } from "../utils/localDaoContracts";
 import { maskAddress } from "../utils/address";
 import {
   getDaoChatTransportLabel,
   loadDaoChatMessages,
+  MESSAGES_NAV_DAO_STORAGE_KEY,
   sendDaoChatMessage,
   subscribeDaoChat,
   type DaoChatMessage,
 } from "../utils/daoChat";
+import { uploadImageToIpfs } from "../utils/ipfs";
 import { formatTxError, notifyError, notifySuccess, notifyWarning } from "../utils/toast";
+import { BACKEND_URL } from "../utils/backendUrl";
+import {
+  PROFILE_AVATAR_CHANGED_EVENT,
+  getStoredProfileAvatarUrl,
+} from "../utils/profileAvatar";
+import {
+  getAccountDisplayName,
+  getAccountInitial,
+  normalizeMemberLabel,
+} from "../utils/userDisplay";
 
 type RoomSummary = {
   lastMessage: DaoChatMessage | null;
@@ -20,38 +33,6 @@ type RoomSummary = {
 };
 
 const LAST_SEEN_KEY = "localdao_chat_last_seen_by_room";
-const ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
-const MASKED_ADDRESS_REGEX = /^0x[a-fA-F0-9]{4,}\.\.\.[a-fA-F0-9]{4}$/;
-const FRIENDLY_ADJECTIVES = [
-  "Calm",
-  "Bright",
-  "Brave",
-  "Swift",
-  "Golden",
-  "Noble",
-  "Wise",
-  "Keen",
-] as const;
-const FRIENDLY_NOUNS = [
-  "River",
-  "Palm",
-  "Eagle",
-  "Cedar",
-  "Sun",
-  "Wave",
-  "Stone",
-  "Harbor",
-] as const;
-
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
-
-const toReadableWords = (value: string) =>
-  value
-    .replace(/[_\-.]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/\b\w/g, (char) => char.toUpperCase());
-
 const readStringPath = (value: unknown, path: string[]): string => {
   let current: unknown = value;
   for (const key of path) {
@@ -59,52 +40,6 @@ const readStringPath = (value: unknown, path: string[]): string => {
     current = (current as Record<string, unknown>)[key];
   }
   return typeof current === "string" ? current.trim() : "";
-};
-
-const generateMemberName = (walletAddress: string) => {
-  if (!ADDRESS_REGEX.test(walletAddress)) return "Community Member";
-  let hash = 0;
-  for (const char of walletAddress.toLowerCase()) {
-    hash = (hash * 31 + char.charCodeAt(0)) % 1000003;
-  }
-  const adjective = FRIENDLY_ADJECTIVES[hash % FRIENDLY_ADJECTIVES.length];
-  const noun = FRIENDLY_NOUNS[Math.floor(hash / FRIENDLY_ADJECTIVES.length) % FRIENDLY_NOUNS.length];
-  return `Member ${adjective} ${noun}`;
-};
-
-const isWalletLikeLabel = (value: string) =>
-  ADDRESS_REGEX.test(value) || MASKED_ADDRESS_REGEX.test(value);
-
-const resolveSenderLabel = (user: unknown, walletAddress: string) => {
-  const candidateNamePaths = [
-    ["name"],
-    ["displayName"],
-    ["google", "name"],
-    ["apple", "name"],
-    ["discord", "username"],
-    ["twitter", "name"],
-    ["github", "username"],
-  ];
-  for (const path of candidateNamePaths) {
-    const name = readStringPath(user, path);
-    if (name) return toReadableWords(name);
-  }
-
-  const email = readStringPath(user, ["email", "address"]);
-  if (email) {
-    const localPart = email.split("@")[0] ?? "";
-    if (localPart) return toReadableWords(localPart);
-  }
-
-  return generateMemberName(walletAddress);
-};
-
-const normalizeLabel = (label: string, senderWallet: string) => {
-  const trimmed = label.trim();
-  if (!trimmed || isWalletLikeLabel(trimmed)) {
-    return generateMemberName(senderWallet);
-  }
-  return toReadableWords(trimmed);
 };
 
 const readLastSeen = (): Record<string, number> => {
@@ -144,13 +79,30 @@ const formatMessageTimestamp = (createdAt: number) => {
   });
 };
 
+const MAX_CHAT_IMAGE_BYTES = 4 * 1024 * 1024;
+const CHAT_IMAGE_MIME = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+
+const roomListPreview = (msg: DaoChatMessage | null) => {
+  if (!msg) return "No messages yet";
+  if (msg.attachmentUrl?.trim()) {
+    const t = msg.content.trim();
+    return t ? `📷 ${t.slice(0, 40)}${t.length > 40 ? "…" : ""}` : "📷 Photo";
+  }
+  return msg.content;
+};
+
+const canUsePinataImages = () =>
+  Boolean((import.meta.env.VITE_PINATA_JWT as string | undefined)?.trim());
+
 // Component for Gmail notification settings
 const GmailNotificationSettings: React.FC<{
   walletAddress: string;
   daoAddress: string;
   daoName: string;
+  /** Helps backfill subscriber email before Gmail OAuth completes. */
+  subscriberEmail?: string;
   onSubscriptionChange?: (isSubscribed: boolean) => void;
-}> = ({ walletAddress, daoAddress, daoName, onSubscriptionChange }) => {
+}> = ({ walletAddress, daoAddress, daoName, subscriberEmail, onSubscriptionChange }) => {
   const [isConnected, setIsConnected] = useState(false);
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -212,8 +164,9 @@ const GmailNotificationSettings: React.FC<{
         body: JSON.stringify({
           walletAddress,
           daoAddress,
-          receiveNotifications: !isSubscribed
-        })
+          receiveNotifications: !isSubscribed,
+          email: subscriberEmail?.trim() || undefined,
+        }),
       });
       
       if (response.ok) {
@@ -307,7 +260,7 @@ const GmailNotificationSettings: React.FC<{
 };
 
 const MessagesView: React.FC = () => {
-  const { user } = usePrivy();
+  const { user, ready: privyReady } = usePrivy();
   const { wallets } = useWallets();
   const [daos, setDaos] = useState<OnchainDao[]>([]);
   const [selectedDao, setSelectedDao] = useState<OnchainDao | null>(null);
@@ -321,16 +274,40 @@ const MessagesView: React.FC = () => {
   const [mobileShowRooms, setMobileShowRooms] = useState(true);
   const [error, setError] = useState("");
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const [pendingImage, setPendingImage] = useState<{ file: File; previewUrl: string } | null>(null);
+  const [myProfileAvatarUrl, setMyProfileAvatarUrl] = useState<string | null>(null);
+  /** Re-run message row avatars when any profile photo changes (localStorage). */
+  const [profileAvatarTick, setProfileAvatarTick] = useState(0);
 
-  const activeWallet = useMemo(
-    () => wallets.find((wallet) => wallet.type === "ethereum") ?? null,
-    [wallets],
-  );
-  const walletAddress = activeWallet?.address ?? "";
+  const walletAddress = useMemo(() => {
+    const embedded = wallets.find((w) => w.type === "ethereum")?.address?.trim();
+    const linked = user?.linkedAccounts?.find((a) => {
+      if (a.type !== "wallet" || !("address" in a)) return false;
+      const addr = (a as { address?: string }).address?.trim();
+      return Boolean(addr && addr.startsWith("0x"));
+    }) as { address?: string } | undefined;
+    return (embedded || linked?.address?.trim() || "").trim();
+  }, [wallets, user]);
 
-  const senderLabel = useMemo(() => {
-    return resolveSenderLabel(user, walletAddress);
-  }, [user, walletAddress]);
+  const senderLabel = useMemo(() => getAccountDisplayName(user, walletAddress), [user, walletAddress]);
+
+  useEffect(() => {
+    if (!walletAddress) {
+      setMyProfileAvatarUrl(null);
+      return;
+    }
+    setMyProfileAvatarUrl(getStoredProfileAvatarUrl(walletAddress));
+    const sync = (ev: Event) => {
+      const w = (ev as CustomEvent<{ wallet?: string }>).detail?.wallet;
+      setProfileAvatarTick((t) => t + 1);
+      if (w === walletAddress.toLowerCase()) {
+        setMyProfileAvatarUrl(getStoredProfileAvatarUrl(walletAddress));
+      }
+    };
+    window.addEventListener(PROFILE_AVATAR_CHANGED_EVENT, sync);
+    return () => window.removeEventListener(PROFILE_AVATAR_CHANGED_EVENT, sync);
+  }, [walletAddress]);
 
   // Function to send notification to backend when message is sent
   const notifyBackendOfNewMessage = async (message: DaoChatMessage, daoName: string) => {
@@ -343,33 +320,42 @@ const MessagesView: React.FC = () => {
         senderName: message.senderLabel
       });
       
+      const emailPreview = message.attachmentUrl?.trim()
+        ? message.content.trim()
+          ? `${message.content.trim().slice(0, 200)} [Photo]`
+          : "[Photo shared]"
+        : message.content;
+
       const response = await fetch(`${BACKEND_URL}/api/chat/webhook/new-message`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           daoAddress: message.daoAddress,
           daoName: daoName,
-          message: message.content,
+          message: emailPreview,
           senderWallet: message.senderWallet,
           senderName: message.senderLabel,
           timestamp: message.createdAt
         })
       });
-      
-      const result = await response.json();
-      console.log(`📧 Webhook result: ${result.notified} emails sent`, result);
-      
-      if (result.notified === 0) {
-        console.log("⚠️ No email sent. Possible reasons:");
-        console.log("   - The sender wallet is the same as the subscriber");
-        console.log("   - No subscribers found for this DAO");
-        console.log("   - Gmail not connected for subscribers");
+
+      const result = (await response.json()) as Record<string, unknown>;
+      if (!response.ok) {
+        const msg = typeof result.error === "string" ? result.error : response.statusText;
+        throw new Error(msg || "Webhook failed");
       }
-      
+
+      console.log("📧 Webhook result:", result);
+
+      const notified = typeof result.notified === "number" ? result.notified : 0;
+      if (!result.queued && notified === 0) {
+        console.log("⚠️ No email sent synchronously — check subscribers or mail config.");
+      }
+
       return result;
     } catch (error) {
       console.error("Failed to notify backend:", error);
-      return { success: false, notified: 0 };
+      return { success: false, notified: 0, queued: false };
     }
   };
 
@@ -385,7 +371,12 @@ const MessagesView: React.FC = () => {
           const lastMessage = roomMessages[roomMessages.length - 1] ?? null;
           const lastSeenMap = readLastSeen();
           const seenAt = lastSeenMap[dao.address.toLowerCase()] ?? 0;
-          const unreadCount = roomMessages.filter((msg) => msg.createdAt > seenAt).length;
+          const wal = walletAddress.trim().toLowerCase();
+          const unreadCount = wal
+            ? roomMessages.filter(
+                (msg) => msg.createdAt > seenAt && msg.senderWallet.toLowerCase() !== wal,
+              ).length
+            : 0;
           return [dao.address.toLowerCase(), { lastMessage, unreadCount }] as const;
         }),
       );
@@ -434,6 +425,30 @@ const MessagesView: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    if (daos.length === 0) return;
+    try {
+      const raw = sessionStorage.getItem(MESSAGES_NAV_DAO_STORAGE_KEY);
+      if (!raw?.trim()) return;
+      sessionStorage.removeItem(MESSAGES_NAV_DAO_STORAGE_KEY);
+      const match = daos.find((d) => d.address.toLowerCase() === raw.trim().toLowerCase());
+      if (match) {
+        setSelectedDao(match);
+        setMobileShowRooms(false);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [daos]);
+
+  useEffect(() => {
+    return () => {
+      if (pendingImage?.previewUrl.startsWith("blob:")) {
+        URL.revokeObjectURL(pendingImage.previewUrl);
+      }
+    };
+  }, [pendingImage?.previewUrl]);
+
+  useEffect(() => {
     if (!selectedDao) {
       setMessages([]);
       return;
@@ -476,8 +491,9 @@ const MessagesView: React.FC = () => {
   }, [messages.length, selectedDao?.address]);
 
   useEffect(() => {
+    if (daos.length === 0) return;
     void loadRoomSummaries(daos);
-  }, [daos.length]);
+  }, [daos.length, walletAddress]);
 
   const filteredDaos = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
@@ -491,9 +507,10 @@ const MessagesView: React.FC = () => {
     return messages.map((msg) => ({
       ...msg,
       mine: walletAddress ? msg.senderWallet.toLowerCase() === walletAddress.toLowerCase() : false,
-      displayLabel: normalizeLabel(msg.senderLabel, msg.senderWallet),
+      displayLabel: normalizeMemberLabel(msg.senderLabel, msg.senderWallet),
+      peerAvatarUrl: getStoredProfileAvatarUrl(msg.senderWallet),
     }));
-  }, [messages, walletAddress]);
+  }, [messages, walletAddress, profileAvatarTick]);
 
   const handleSend = async () => {
     if (!selectedDao) return;
@@ -502,41 +519,62 @@ const MessagesView: React.FC = () => {
         notifyWarning("Connect your wallet first to send messages.");
         return;
       }
-      if (!draft.trim()) return;
+      const text = draft.trim();
+      if (!text && !pendingImage) return;
+      if (pendingImage && !canUsePinataImages()) {
+        notifyError("Image upload needs VITE_PINATA_JWT in your environment.");
+        return;
+      }
       setSending(true);
-      
-      console.log("📤 Sending message to blockchain from:", walletAddress);
-      console.log("📤 To DAO:", selectedDao.name, selectedDao.address);
-      
-      // Send message to blockchain
-      await sendDaoChatMessage({
+
+      let attachmentUrl: string | undefined;
+      if (pendingImage) {
+        const { gatewayUrl } = await uploadImageToIpfs(pendingImage.file);
+        attachmentUrl = gatewayUrl;
+        if (pendingImage.previewUrl.startsWith("blob:")) {
+          URL.revokeObjectURL(pendingImage.previewUrl);
+        }
+        setPendingImage(null);
+      }
+
+      const sent = await sendDaoChatMessage({
         daoAddress: selectedDao.address,
         senderWallet: walletAddress,
         senderLabel,
-        content: draft,
+        content: text,
+        attachmentUrl,
       });
-      
-      console.log("✅ Message sent to blockchain");
-      
-      // Create message object for backend notification
-      const newMessage = {
-        id: Date.now().toString(),
-        daoAddress: selectedDao.address,
-        content: draft,
-        senderWallet: walletAddress,
-        senderLabel,
-        createdAt: Date.now()
-      } as DaoChatMessage;
-      
-      // 🔥 CRITICAL: Notify backend to send email notifications
+
       console.log("📧 Notifying backend to send emails...");
-      const webhookResult = await notifyBackendOfNewMessage(newMessage, selectedDao.name);
-      
-      if (webhookResult.notified > 0) {
-        console.log("✅ Email notification sent successfully!");
-        notifySuccess("Message sent! Email notification delivered.");
+      const webhookResult = await notifyBackendOfNewMessage(sent, selectedDao.name);
+
+      type Wr = Record<string, unknown>;
+      const wr = webhookResult as Wr;
+      const queued = Boolean(wr.queued);
+      const estimated =
+        typeof wr.estimatedRecipients === "number"
+          ? wr.estimatedRecipients
+          : typeof wr.estimatedRecipients === "string"
+            ? Number(wr.estimatedRecipients)
+            : null;
+      const emailsSent =
+        typeof wr.notified === "number" ? wr.notified : Number(wr.notified ?? 0);
+      const inApp =
+        typeof wr.inAppNotifications === "number"
+          ? wr.inAppNotifications
+          : Number(wr.inAppNotifications ?? 0);
+
+      if (queued) {
+        notifySuccess(
+          estimated != null && !Number.isNaN(estimated) && estimated > 0
+            ? `Message sent! Subscriber notifications queued (~${estimated} recipients). Workers will deliver shortly.`
+            : "Message sent! Subscriber notifications queued; workers will process shortly.",
+        );
+      } else if (emailsSent > 0) {
+        notifySuccess("Message sent! Subscribers notified by email.");
+      } else if (inApp > 0) {
+        notifySuccess("Message sent! In-app notifications created for subscribers.");
       } else {
-        console.log("⚠️ No email notification sent (you messaged yourself or no subscribers)");
         notifySuccess("Message sent!");
       }
       
@@ -559,12 +597,18 @@ const MessagesView: React.FC = () => {
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Community Chat</h1>
           <p className="text-slate-500 mt-1">Real-time rooms, one room per DAO.</p>
-          {walletAddress && (
+          {!privyReady ? (
+            <p className="text-xs text-slate-400 mt-1">Checking your Privy session…</p>
+          ) : walletAddress ? (
             <p className="text-xs text-slate-400 mt-1">
-              Your wallet: {maskAddress(walletAddress)}
+              Signed in as {senderLabel} · Wallet {maskAddress(walletAddress)}
               {subscriptionStatus[selectedDao?.address?.toLowerCase() || ""] && (
                 <span className="ml-2 text-emerald-600">🔔 Email notifications ON</span>
               )}
+            </p>
+          ) : (
+            <p className="text-xs text-amber-800 mt-1">
+              Connect your Ethereum wallet to post in chat (header chip or Wallet screen).
             </p>
           )}
         </div>
@@ -630,7 +674,7 @@ const MessagesView: React.FC = () => {
                       <p className="text-[11px] text-slate-500 mt-1">{maskAddress(dao.address)}</p>
                       <div className="mt-2 flex items-center justify-between gap-2">
                         <p className="text-xs text-slate-500 line-clamp-1">
-                          {summary?.lastMessage?.content ?? "No messages yet"}
+                          {roomListPreview(summary?.lastMessage ?? null)}
                         </p>
                         {summary?.lastMessage ? (
                           <span className="text-[10px] text-slate-400 whitespace-nowrap">
@@ -671,6 +715,7 @@ const MessagesView: React.FC = () => {
                       walletAddress={walletAddress}
                       daoAddress={selectedDao.address}
                       daoName={selectedDao.name}
+                      subscriberEmail={readStringPath(user, ["email", "address"]) || undefined}
                       onSubscriptionChange={(isSubscribed) => {
                         setSubscriptionStatus(prev => ({
                           ...prev,
@@ -693,40 +738,150 @@ const MessagesView: React.FC = () => {
                     </div>
                   </div>
                 ) : (
-                  roomMessages.map((msg) => (
-                    <div key={msg.id} className={`flex ${msg.mine ? "justify-end" : "justify-start"}`}>
-                      <div className={`max-w-[92%] sm:max-w-[75%] rounded-2xl px-3.5 py-2.5 shadow-sm ${msg.mine ? "bg-emerald-600 text-white" : "bg-white border border-slate-200 text-slate-900"}`}>
+                  roomMessages.map((msg) => {
+                    const bubble = (
+                      <div
+                        className={`max-w-[min(100%,calc(100%-2.75rem))] sm:max-w-[70%] rounded-2xl px-3.5 py-2.5 shadow-sm min-w-0 ${msg.mine ? "bg-emerald-600 text-white" : "bg-white border border-slate-200 text-slate-900"}`}
+                      >
                         <div className={`text-[11px] mb-1 ${msg.mine ? "text-emerald-100" : "text-slate-500"}`}>
                           {msg.mine ? "You" : msg.displayLabel}
                         </div>
-                        <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">{msg.content}</p>
+                        {msg.attachmentUrl?.trim() ? (
+                          <a
+                            href={msg.attachmentUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={`block mt-0.5 ${msg.mine ? "text-emerald-50" : ""}`}
+                          >
+                            <img
+                              src={msg.attachmentUrl}
+                              alt=""
+                              className={`rounded-xl max-h-52 max-w-full object-cover border ${msg.mine ? "border-emerald-400/40" : "border-slate-200"}`}
+                              loading="lazy"
+                            />
+                          </a>
+                        ) : null}
+                        {msg.content.trim() ? (
+                          <p className="text-sm whitespace-pre-wrap break-words leading-relaxed mt-1">{msg.content}</p>
+                        ) : null}
+                        {!msg.content.trim() && !msg.attachmentUrl?.trim() ? (
+                          <p className="text-sm opacity-80">(empty)</p>
+                        ) : null}
                         <div className={`text-[10px] mt-1.5 ${msg.mine ? "text-emerald-100" : "text-slate-400"}`}>
                           {formatMessageTimestamp(msg.createdAt)}
                         </div>
                       </div>
-                    </div>
-                  ))
+                    );
+                    const face = (
+                      <UserAvatar
+                        imageUrl={msg.mine ? myProfileAvatarUrl : msg.peerAvatarUrl}
+                        initials={getAccountInitial(msg.displayLabel)}
+                        size={36}
+                        className="shrink-0 ring-2 ring-white shadow-sm mb-px"
+                      />
+                    );
+                    return (
+                      <div key={msg.id} className="flex w-full">
+                        {msg.mine ? (
+                          <div className="flex w-full justify-end items-end gap-2 pl-10 sm:pl-14">
+                            {bubble}
+                            {face}
+                          </div>
+                        ) : (
+                          <div className="flex w-full justify-start items-end gap-2 pr-10 sm:pr-14">
+                            {face}
+                            {bubble}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
                 )}
               </div>
 
               <div className="p-3 sm:p-4 border-t border-slate-100 bg-white">
+                <input
+                  ref={imageInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/gif,image/webp"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (!file) return;
+                    if (!CHAT_IMAGE_MIME.has(file.type)) {
+                      notifyWarning("Please choose a JPEG, PNG, GIF, or WebP image.");
+                      return;
+                    }
+                    if (file.size > MAX_CHAT_IMAGE_BYTES) {
+                      notifyWarning("Image must be 4 MB or smaller.");
+                      return;
+                    }
+                    if (pendingImage?.previewUrl.startsWith("blob:")) {
+                      URL.revokeObjectURL(pendingImage.previewUrl);
+                    }
+                    setPendingImage({
+                      file,
+                      previewUrl: URL.createObjectURL(file),
+                    });
+                  }}
+                />
+                {pendingImage ? (
+                  <div className="mb-3 flex items-start gap-2 p-2 rounded-xl border border-emerald-200 bg-emerald-50/80">
+                    <img
+                      src={pendingImage.previewUrl}
+                      alt=""
+                      className="h-16 w-16 rounded-lg object-cover border border-emerald-200"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-slate-800">Image ready to send</p>
+                      <p className="text-[11px] text-slate-500 truncate">{pendingImage.file.name}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (pendingImage.previewUrl.startsWith("blob:")) {
+                          URL.revokeObjectURL(pendingImage.previewUrl);
+                        }
+                        setPendingImage(null);
+                      }}
+                      className="p-1.5 rounded-lg text-slate-500 hover:bg-white border border-transparent hover:border-slate-200"
+                      aria-label="Remove image"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : null}
                 <div className="flex items-end gap-2 sm:gap-3">
+                  <button
+                    type="button"
+                    disabled={!selectedDao || sending || !canUsePinataImages()}
+                    onClick={() => imageInputRef.current?.click()}
+                    title={
+                      canUsePinataImages()
+                        ? "Attach image (stored on IPFS)"
+                        : "Set VITE_PINATA_JWT to enable image uploads"
+                    }
+                    className="h-11 w-11 shrink-0 flex items-center justify-center rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <ImagePlus className="w-5 h-5" />
+                  </button>
                   <textarea
                     value={draft}
                     onChange={(e) => setDraft(e.target.value.slice(0, 1000))}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && !e.shiftKey) {
                         e.preventDefault();
-                        if (!sending) void handleSend();
+                        if (!sending && selectedDao && (draft.trim() || pendingImage)) void handleSend();
                       }
                     }}
                     rows={2}
-                    placeholder={selectedDao ? "Type your message..." : "Select a room first"}
+                    placeholder={selectedDao ? "Type a message (optional with image)…" : "Select a room first"}
                     className="flex-1 p-3 border border-slate-200 rounded-xl text-sm outline-none resize-none focus:ring-2 focus:ring-emerald-500/20"
                   />
                   <button
                     onClick={() => void handleSend()}
-                    disabled={!selectedDao || !draft.trim() || sending}
+                    disabled={!selectedDao || (!draft.trim() && !pendingImage) || sending}
                     className="h-11 px-4 navy-bg text-white rounded-xl text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
                   >
                     <Send className="w-4 h-4" />
@@ -735,7 +890,12 @@ const MessagesView: React.FC = () => {
                 </div>
                 <div className="mt-2 flex items-center justify-between">
                   <p className="text-xs text-slate-500">
-                    {walletAddress ? `Posting as ${senderLabel}` : "Connect an Ethereum wallet in Privy to send messages."}
+                    {!privyReady
+                      ? "Checking your session…"
+                      : walletAddress
+                        ? `Posting as ${senderLabel}`
+                        : "Connect your wallet in the app header or Wallet tab to send messages."}
+                    {canUsePinataImages() ? "" : walletAddress ? " · Add VITE_PINATA_JWT for photos." : ""}
                   </p>
                   <p className="text-[11px] text-slate-400">{draft.length}/1000</p>
                 </div>

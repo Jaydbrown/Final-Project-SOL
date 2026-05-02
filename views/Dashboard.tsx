@@ -6,8 +6,10 @@ import { Card, DeadlineChip, FundingProgress, MetricCard, StatusChip } from '../
 import type { User } from '@privy-io/react-auth';
 import { fetchActiveDaos, fetchAllInvestments, fetchDaoUserRole, fetchYieldRows, formatUsdcAmount, statusLabel, type DaoUserRole, type OnchainDao, type OnchainInvestment, type YieldRow } from '../utils/localDaoContracts';
 import { formatTxError, notifyError, notifySuccess, notifyWarning } from '../utils/toast';
+import { BACKEND_URL } from '../utils/backendUrl';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
+const subscriberEmailFromUser = (user: User | null | undefined): string | undefined =>
+  typeof user?.email?.address === 'string' ? user.email.address.trim() : undefined;
 
 interface DashboardProps {
   onViewChange: (view: ViewState) => void;
@@ -134,7 +136,8 @@ const DaoNotificationToggle: React.FC<{
   walletAddress: string;
   daoAddress: string;
   daoName: string;
-}> = ({ walletAddress, daoAddress, daoName }) => {
+  subscriberEmail?: string;
+}> = ({ walletAddress, daoAddress, daoName, subscriberEmail }) => {
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -146,7 +149,7 @@ const DaoNotificationToggle: React.FC<{
 
   const checkSubscription = async () => {
     try {
-      const response = await fetch(`${BACKEND_URL}/api/notifications/chat/subscriptions/${walletAddress}`);
+      const response = await fetch(`${BACKEND_URL}/api/chat/subscriptions/${walletAddress}`);
       const subs = await response.json();
       const daoSub = subs.find((s: any) => s.daoAddress === daoAddress.toLowerCase());
       setIsSubscribed(daoSub?.receiveNotifications || false);
@@ -158,14 +161,15 @@ const DaoNotificationToggle: React.FC<{
   const toggleSubscription = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${BACKEND_URL}/api/notifications/chat/subscribe`, {
+      const response = await fetch(`${BACKEND_URL}/api/chat/subscribe`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           walletAddress,
           daoAddress,
-          receiveNotifications: !isSubscribed
-        })
+          receiveNotifications: !isSubscribed,
+          email: subscriberEmail?.trim() || undefined,
+        }),
       });
       
       if (response.ok) {
@@ -355,6 +359,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onViewChange, onVote, user }) => 
                           walletAddress={walletAddress}
                           daoAddress={dao.address}
                           daoName={dao.name}
+                          subscriberEmail={subscriberEmailFromUser(user)}
                         />
                       )}
                     </div>
