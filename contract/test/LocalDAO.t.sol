@@ -93,6 +93,12 @@ contract LocalDAOTest is Test {
         vm.prank(admin);
         dao.addMember(member3, keccak256("kyc3"));
 
+        vm.startPrank(admin);
+        dao.verifyMemberKYC(member1);
+        dao.verifyMemberKYC(member2);
+        dao.verifyMemberKYC(member3);
+        vm.stopPrank();
+
         // Mint USDC to members
         usdc.mint(member1, INITIAL_USDC);
         usdc.mint(member2, INITIAL_USDC);
@@ -110,8 +116,20 @@ contract LocalDAOTest is Test {
 
         (, bool kycVerified, , , bool isActive) = dao.members(newMember);
         assertTrue(isActive);
-        assertTrue(kycVerified);
+        assertFalse(kycVerified);
         assertEq(dao.memberCount(), 4);
+
+        vm.prank(admin);
+        dao.verifyMemberKYC(newMember);
+        (, kycVerified, , , isActive) = dao.members(newMember);
+        assertTrue(kycVerified);
+        assertTrue(isActive);
+    }
+
+    function test_VerifyMemberKYC_OnlyAdmin() public {
+        vm.prank(nonMember);
+        vm.expectRevert(LocalDAO.Unauthorized.selector);
+        dao.verifyMemberKYC(member1);
     }
 
     function test_AddMember_OnlyAdmin() public {
@@ -479,11 +497,50 @@ contract LocalDAOTest is Test {
         vm.prank(admin3);
         dao.approveYieldDeposit(pid);
 
-        // Execute
+        // Execute (must be proposer, admin, or creator — not arbitrary EOAs)
+        vm.prank(financeManager);
         dao.executeYieldDeposit(pid);
 
         LocalDAO.Investment memory inv = dao.getInvestment(investmentId);
         assertEq(inv.totalYieldGenerated, yieldAmount);
+    }
+
+    function test_ExecuteYieldDeposit_RevertIfUnauthorized() public {
+        vm.prank(admin);
+        uint256 investmentId = dao.createInvestment(
+            "Test Investment",
+            ILocalDAO.Category.HEALTH,
+            10000 * 1e6,
+            5,
+            ILocalDAO.Grade.A,
+            30,
+            new string[](0)
+        );
+
+        vm.startPrank(member1);
+        usdc.approve(address(dao), 10000 * 1e6);
+        dao.vote(investmentId, 10000 * 1e6, 1);
+        vm.stopPrank();
+
+        vm.prank(admin);
+        dao.activateInvestment(investmentId);
+
+        uint256 yieldAmount = 500 * 1e6;
+        vm.startPrank(financeManager);
+        usdc.approve(address(dao), yieldAmount);
+        uint256 pid = dao.proposeYieldDeposit(investmentId, yieldAmount, "cid");
+        vm.stopPrank();
+
+        vm.prank(admin);
+        dao.approveYieldDeposit(pid);
+        vm.prank(admin2);
+        dao.approveYieldDeposit(pid);
+        vm.prank(admin3);
+        dao.approveYieldDeposit(pid);
+
+        vm.prank(nonMember);
+        vm.expectRevert(LocalDAO.UnauthorizedYieldExec.selector);
+        dao.executeYieldDeposit(pid);
     }
 
     function test_ClaimYield() public {
@@ -524,7 +581,7 @@ contract LocalDAOTest is Test {
         vm.prank(admin3);
         dao.approveYieldDeposit(pid);
 
-        // Execute
+        vm.prank(financeManager);
         dao.executeYieldDeposit(pid);
 
         // Claim yield
@@ -576,7 +633,7 @@ contract LocalDAOTest is Test {
         vm.prank(admin3);
         dao.approveYieldDeposit(pid);
 
-        // Execute
+        vm.prank(financeManager);
         dao.executeYieldDeposit(pid);
 
         uint256 claimable1 = daoView.calculateClaimableYield(address(dao), investmentId, member1);
@@ -618,6 +675,7 @@ contract LocalDAOTest is Test {
         dao.approveYieldDeposit(pid);
         vm.prank(admin3);
         dao.approveYieldDeposit(pid);
+        vm.prank(financeManager);
         dao.executeYieldDeposit(pid);
 
         (
@@ -690,6 +748,7 @@ contract LocalDAOTest is Test {
         dao.approveYieldDeposit(pid1);
         vm.prank(admin3);
         dao.approveYieldDeposit(pid1);
+        vm.prank(financeManager);
         dao.executeYieldDeposit(pid1);
 
         vm.prank(admin);
@@ -698,6 +757,7 @@ contract LocalDAOTest is Test {
         dao.approveYieldDeposit(pid2);
         vm.prank(admin3);
         dao.approveYieldDeposit(pid2);
+        vm.prank(financeManager);
         dao.executeYieldDeposit(pid2);
 
         (
@@ -876,7 +936,7 @@ contract LocalDAOTest is Test {
         vm.prank(admin3);
         dao.approveYieldDeposit(pid);
 
-        // Execute
+        vm.prank(financeManager);
         dao.executeYieldDeposit(pid);
 
         vm.prank(member1);

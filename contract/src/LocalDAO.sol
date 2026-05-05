@@ -67,6 +67,8 @@ contract LocalDAO is ILocalDAO, Pausable, ReentrancyGuard, Initializable {
     error AlreadyFinanceManager();
     error NotAFinanceManager();
     error EmptyDescription();
+    /// @notice Only the yield proposer or an admin/creator may execute after approvals (prevents third-party griefing).
+    error UnauthorizedYieldExec();
 
     // ===== DAO IDENTITY =====
     string public name;
@@ -195,9 +197,10 @@ contract LocalDAO is ILocalDAO, Pausable, ReentrancyGuard, Initializable {
         if (members[wallet].isActive) revert AlreadyMember();
         if (memberCount >= maxMembership) revert MembershipFull();
 
+        // Roster onboarding: admins finalize compliance with verifyMemberKYC before voting.
         members[wallet] = User({
             wallet: wallet,
-            kycVerified: true,
+            kycVerified: false,
             kycProofHash: kycProofHash,
             joinedAt: block.timestamp,
             isActive: true
@@ -318,8 +321,7 @@ contract LocalDAO is ILocalDAO, Pausable, ReentrancyGuard, Initializable {
             if (IERC20(usdcAddress).allowance(msg.sender, address(this)) < numberOfVotes) revert InsufficientAllowance();
             if (userVote.numberOfVotes != 0 && userVote.voteValue != 1) revert CannotChangeDownToUp();
 
-            IERC20(usdcAddress).safeTransferFrom(msg.sender, address(this), numberOfVotes);
-
+            // CEI: update state before external transfer (ERC-20 UX best practice).
             userVote.voter = msg.sender;
             userVote.investmentId = investmentId;
             userVote.numberOfVotes += numberOfVotes;
@@ -328,6 +330,8 @@ contract LocalDAO is ILocalDAO, Pausable, ReentrancyGuard, Initializable {
 
             inv.upvotes += numberOfVotes;
             totalValueLocked += numberOfVotes;
+
+            IERC20(usdcAddress).safeTransferFrom(msg.sender, address(this), numberOfVotes);
         } else {
             if (userVote.numberOfVotes != 0) revert AlreadyVoted();
             if (numberOfVotes != 0) revert DownvoteNoStake();
@@ -565,6 +569,9 @@ contract LocalDAO is ILocalDAO, Pausable, ReentrancyGuard, Initializable {
         if (p.id == 0) revert InvalidProposal();
         if (p.executed) revert AlreadyExecuted();
         if (p.approvals < REQUIRED_YIELD_APPROVALS) revert NotEnoughApprovals();
+        if (msg.sender != p.proposer && !isAdmin[msg.sender] && msg.sender != creator) {
+            revert UnauthorizedYieldExec();
+        }
 
         Investment storage inv = investments[p.investmentId];
         if (!InvestmentManager.canDepositYield(InvestmentManager.Status(uint8(inv.status)))) revert InvestmentNotActive();

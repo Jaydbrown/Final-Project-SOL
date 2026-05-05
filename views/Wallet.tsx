@@ -159,6 +159,7 @@ const WalletView: React.FC<WalletViewProps> = ({ user }) => {
                         isAdmin={row.isAdmin}
                         isFinanceManager={row.isFinanceManager}
                         isVerifiedMember={row.isVerifiedMember}
+                        isListedMember={row.isListedMember}
                       />
                     </div>
                   ))}

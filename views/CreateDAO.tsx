@@ -1,7 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { ChevronRight, ChevronLeft, Shield, CheckCircle, Loader2, Upload, MapPin } from 'lucide-react';
 import { useWallets } from "@privy-io/react-auth";
-import { addMemberToDao, createDaoOnFactory, updateDaoInfoOnchain, type PrivyEthereumWallet } from "../utils/localDaoContracts";
+import {
+  addMemberToDao,
+  createDaoOnFactory,
+  updateDaoInfoOnchain,
+  verifyMemberOnDao,
+  type PrivyEthereumWallet,
+} from "../utils/localDaoContracts";
 import { maskAddress } from '../utils/address';
 import { uploadImageToIpfs } from '../utils/ipfs';
 import { getTxExplorerUrl, hasBackupExplorer } from '../utils/explorer';
@@ -393,7 +399,20 @@ const CreateDAO: React.FC<CreateDAOProps> = ({ onComplete }) => {
         } catch (memberError) {
           const raw = memberError instanceof Error ? memberError.message : String(memberError ?? '');
           if (!raw.toLowerCase().includes('already a member')) {
-            notices.push(`DAO deployed, but creator auto-onboarding failed: ${raw || 'unknown error'}`);
+            notices.push(`DAO deployed, but creator membership add failed: ${raw || 'unknown error'}`);
+          }
+        }
+        try {
+          await verifyMemberOnDao(
+            ethereumWallet as unknown as PrivyEthereumWallet,
+            result.daoAddress as `0x${string}`,
+            ethereumWallet.address as `0x${string}`,
+          );
+        } catch (verifyError) {
+          const raw = verifyError instanceof Error ? verifyError.message : String(verifyError ?? '');
+          const lower = raw.toLowerCase();
+          if (!lower.includes('kycalreadyverified') && !lower.includes('already verified')) {
+            notices.push(`DAO deployed, but creator KYC verification failed: ${raw || 'unknown error'}`);
           }
         }
       }
