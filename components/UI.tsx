@@ -181,13 +181,28 @@ export const RoleTags: React.FC<{
   isAdmin?: boolean;
   isFinanceManager?: boolean;
   isVerifiedMember?: boolean;
+  /** Address appears in DAO member roster but KYC flag not yet set. */
+  isListedMember?: boolean;
   className?: string;
-}> = ({ isCreator, isAdmin, isFinanceManager, isVerifiedMember, className = '' }) => (
+}> = ({
+  isCreator,
+  isAdmin,
+  isFinanceManager,
+  isVerifiedMember,
+  isListedMember,
+  className = "",
+}) => (
   <div className={`flex flex-wrap gap-2 ${className}`}>
-    {isCreator && <Badge variant="info">Admin</Badge>}
+    {isCreator && <Badge variant="info">Creator</Badge>}
     {isAdmin && !isCreator && <Badge variant="info">Admin</Badge>}
     {isFinanceManager && <Badge variant="neutral">Finance</Badge>}
-    {isVerifiedMember ? <Badge variant="success">KYC Verified</Badge> : <Badge variant="warning">KYC Pending</Badge>}
+    {isVerifiedMember ? (
+      <Badge variant="success">Verified member</Badge>
+    ) : (
+      Boolean(isListedMember) && (
+        <Badge variant="warning">Member · awaiting KYC</Badge>
+      )
+    )}
   </div>
 );
 

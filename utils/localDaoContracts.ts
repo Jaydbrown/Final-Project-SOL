@@ -37,6 +37,7 @@ const LOCAL_DAO_ABI = [
   { type: "error", name: "CannotChangeDownToUp", inputs: [] },
   { type: "error", name: "AlreadyVoted", inputs: [] },
   { type: "error", name: "DownvoteNoStake", inputs: [] },
+  { type: "error", name: "UnauthorizedYieldExec", inputs: [] },
   {
     type: "function",
     name: "creator",
@@ -64,6 +65,19 @@ const LOCAL_DAO_ABI = [
     stateMutability: "view",
     inputs: [{ name: "wallet", type: "address" }],
     outputs: [{ type: "bool" }],
+  },
+  {
+    type: "function",
+    name: "members",
+    stateMutability: "view",
+    inputs: [{ name: "", type: "address" }],
+    outputs: [
+      { name: "wallet_", type: "address" },
+      { name: "kycVerified", type: "bool" },
+      { name: "kycProofHash", type: "bytes32" },
+      { name: "joinedAt", type: "uint256" },
+      { name: "isActive", type: "bool" },
+    ],
   },
   {
     type: "function",
@@ -558,6 +572,10 @@ export type WalletDaoRoleRow = {
   daoAddress: Address;
   daoName: string;
   location: string;
+  /** On-chain roster: `members[wallet].isActive` (excludes removed members; KYC may still be pending). */
+  isListedMember: boolean;
+  tvlFormatted: string;
+  memberCount: number;
   isCreator: boolean;
   isAdmin: boolean;
   isFinanceManager: boolean;
@@ -1414,16 +1432,35 @@ export async function fetchWalletDaoRoles(walletAddress?: Address): Promise<Wall
   const daos = await fetchActiveDaos();
   const rows = await Promise.all(
     daos.map(async (dao) => {
-      const role = await fetchDaoUserRole(dao.address, walletAddress);
+      const [memberRecord, role] = await Promise.all([
+        readContractRpc({
+          address: dao.address,
+          abi: LOCAL_DAO_ABI,
+          functionName: "members",
+          args: [walletAddress],
+        }) as Promise<readonly [Address, boolean, `0x${string}`, bigint, boolean]>,
+        fetchDaoUserRole(dao.address, walletAddress),
+      ]);
+      const isListedMember = Boolean(memberRecord?.[4]);
       return {
         daoAddress: dao.address,
         daoName: dao.name,
         location: dao.location,
+        tvlFormatted: dao.tvlFormatted,
+        memberCount: dao.memberCount,
+        isListedMember,
         ...role,
       };
-    })
+    }),
   );
-  return rows.filter((row) => row.isCreator || row.isAdmin || row.isFinanceManager || row.isVerifiedMember);
+  return rows.filter(
+    (row) =>
+      row.isCreator ||
+      row.isAdmin ||
+      row.isFinanceManager ||
+      row.isVerifiedMember ||
+      row.isListedMember,
+  );
 }
 
 export async function updateDaoInfoOnchain(

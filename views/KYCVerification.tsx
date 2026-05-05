@@ -246,7 +246,9 @@ const KYCVerification: React.FC<{ onComplete: () => void }> = ({ onComplete }) =
       setProofReferenceUsed(result.proofReferenceUsed);
       setKycProofHash(result.kycProofHash);
       setStep(2);
-      notifySuccess('Member added successfully.');
+      notifySuccess(
+        'Member added to the roster. Use Admin → Verify Member so they can vote once KYC checks are complete.',
+      );
     } catch (err) {
       const friendly = normalizeAddMemberError(err);
       setError(friendly);
